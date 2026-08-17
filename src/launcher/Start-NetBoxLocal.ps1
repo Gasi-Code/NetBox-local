@@ -141,8 +141,49 @@ else {
         }
     }
 
+    # Nothing to import yet, but an export is configured: take one now rather
+    # than starting empty and leaving the user to work out why. This is the
+    # first-run case - afterwards the scheduled task keeps the data current.
+    $exportScript = Join-Path $RootDir 'src\export\Sync-NetBoxExport.ps1'
+    $haveExport = $false
+
+    if ($syncRootUsable) {
+        $haveExport = [bool](
+            (Get-ChildItem -Path $syncRoot -Filter '*.zip' -File -ErrorAction SilentlyContinue) -or
+            (Get-ChildItem -Path $syncRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path (Join-Path $_.FullName 'manifest.json') })
+        )
+    }
+
+    if (-not $haveExport -and (Test-Path $exportScript)) {
+        $configuredServer = (Select-String -Path $exportScript -Pattern '^\$NetBoxServer\s*=' |
+            Select-Object -First 1).Line -replace '^\$NetBoxServer\s*=\s*"' -replace '"\s*$'
+        $configuredKey = (Select-String -Path $exportScript -Pattern '^\$APIKey\s*=' |
+            Select-Object -First 1).Line -replace '^\$APIKey\s*=\s*"' -replace '"\s*$'
+
+        $serverSet = -not [string]::IsNullOrWhiteSpace($configuredServer)
+        $keySet = (-not [string]::IsNullOrWhiteSpace($configuredKey)) -and ($configuredKey -notmatch '^X+$')
+
+        if ($serverSet -and $keySet) {
+            Write-Step "No dataset yet - fetching one from $configuredServer"
+            Write-Host '    This runs once and may take several minutes.'
+
+            if (-not (Test-Path $syncRoot)) {
+                New-Item -ItemType Directory -Path $syncRoot -Force | Out-Null
+            }
+
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ('"{0}"' -f $exportScript) |
+                Select-Object -Last 2 | Write-Host
+
+            $syncRootUsable = Test-Path -LiteralPath $syncRoot
+        }
+        elseif ($serverSet) {
+            Write-Warn 'A NetBox server is configured but no API token. Add it to src\export\Sync-NetBoxExport.ps1.'
+        }
+    }
+
     if (-not $syncRootUsable) {
-        Write-Warn "Import source not available. Showing the dataset from the previous run."
+        Write-Warn 'Import source not available. Showing the dataset from the previous run.'
     }
     else {
         # Accept both an already extracted export directory and a weekday ZIP.

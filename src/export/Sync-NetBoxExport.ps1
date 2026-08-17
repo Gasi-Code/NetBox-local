@@ -607,7 +607,7 @@ Function Invoke-NetBoxExport {
                 -Message (
                     "Endpoint discovery failed; falling back to the static " +
                     "list. New NetBox models may therefore " +
-                    "moeglicherweise nicht exportiert. Error: " +
+                    "may therefore not be exported. Error: " +
                     $_.Exception.Message
                 )
 
@@ -721,7 +721,7 @@ Function Invoke-NetBoxExport {
                     -Level "ERROR" `
                     -Message (
                         "Endpoint '" + $name + "' failed; the export " +
-                        "wird fortgesetzt. Error: " + $_.Exception.Message
+                        "continues. Error: " + $_.Exception.Message
                     )
             }
         }
@@ -801,7 +801,7 @@ Function Invoke-NetBoxExport {
 
         Publish-NetBoxExport `
             -StagingPath $StagingPath `
-            -ZielVerzeichnis $global:LocalSyncPath
+            -TargetDirectory $global:LocalSyncPath
 
         Remove-Item `
             -Path $StagingPath `
@@ -831,8 +831,8 @@ Function Invoke-NetBoxExport {
         }
 
         Update-NetBoxStatusFile `
-            -Wochentag (Get-NetBoxWeekday) `
-            -Statuszeile (
+            -Weekday (Get-NetBoxWeekday) `
+            -StatusLine (
                 (Get-Date -Format "yyyy.MM.dd HH:mm:ss") +
                 $statusText +
                 $totalObjectCount +
@@ -879,8 +879,8 @@ Function Invoke-NetBoxExport {
 
         Try {
             Update-NetBoxStatusFile `
-                -Wochentag (Get-NetBoxWeekday) `
-                -Statuszeile (
+                -Weekday (Get-NetBoxWeekday) `
+                -StatusLine (
                     (Get-Date -Format "yyyy.MM.dd HH:mm:ss") +
                     " - ERROR: " + $_.Exception.Message
                 )

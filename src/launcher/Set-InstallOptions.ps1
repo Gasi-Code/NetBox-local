@@ -187,3 +187,57 @@ Write-Host "Export configured for $NetBoxServer"
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
     Write-Host 'No API token given - add it to Sync-NetBoxExport.ps1 before the first export.'
 }
+
+# --- Directories and scheduled task ---------------------------------------
+#
+# Configuring the export is not the same as having it run. Without these steps
+# the sync folder never appears, no export is ever taken, and the first start
+# reports "import source not available" with no hint as to why.
+
+foreach ($directory in @($SyncRoot, $ScriptPath)) {
+    if ([string]::IsNullOrWhiteSpace($directory)) { continue }
+    if (-not (Test-Path $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        Write-Host "Created $directory"
+    }
+}
+
+$taskName = 'NetBox Local export'
+
+try {
+    $action = New-ScheduledTaskAction `
+        -Execute 'powershell.exe' `
+        -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $ExportScriptPath + '"') `
+        -WorkingDirectory (Split-Path $ExportScriptPath -Parent)
+
+    # 17:00 is late enough that the day's changes are in, early enough that
+    # someone is still around if it fails.
+    $trigger = New-ScheduledTaskTrigger -Daily -At '17:00'
+
+    # A notebook is rarely awake at exactly 17:00. Without a catch-up rule the
+    # export is skipped on every day the machine happened to be off, which is
+    # precisely how a dataset quietly goes stale.
+    $settings = New-ScheduledTaskSettingsSet `
+        -StartWhenAvailable `
+        -DontStopIfGoingOnBatteries `
+        -AllowStartIfOnBatteries `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 4) `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 15)
+
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+        -LogonType Interactive `
+        -RunLevel Limited
+
+    Register-ScheduledTask -TaskName $taskName `
+        -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+        -Force | Out-Null
+
+    Write-Host "Scheduled task '$taskName' registered for 17:00 daily"
+}
+catch {
+    Write-Warning "Could not register the scheduled task: $($_.Exception.Message)"
+    Write-Host 'Register it manually with src\export\Register-SyncTask.ps1'
+}
