@@ -128,8 +128,21 @@ if ($SkipImport -or -not $config.import.autoImportOnStart) {
 else {
     $syncRoot = $config.import.syncRoot
 
-    if (-not (Test-Path $syncRoot)) {
-        Write-Warn "Import source $syncRoot does not exist. Showing the dataset from the previous run."
+    # Test-Path throws on a malformed path rather than returning false, which
+    # would abort the whole start over a single bad configuration value. A
+    # missing or unusable data source is not a reason to refuse to run: the
+    # previously imported dataset is still there and still useful.
+    $syncRootUsable = $false
+    if (-not [string]::IsNullOrWhiteSpace($syncRoot)) {
+        try { $syncRootUsable = Test-Path -LiteralPath $syncRoot }
+        catch {
+            Write-Warn "The configured import source is not a valid path: $syncRoot"
+            Write-Warn "Correct 'import.syncRoot' in $ConfigPath."
+        }
+    }
+
+    if (-not $syncRootUsable) {
+        Write-Warn "Import source not available. Showing the dataset from the previous run."
     }
     else {
         # Accept both an already extracted export directory and a weekday ZIP.

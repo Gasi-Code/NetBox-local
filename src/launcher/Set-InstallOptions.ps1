@@ -29,7 +29,9 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('readonly', 'superuser', 'both')]
+    # No ValidateSet here: the installer appends a sentinel character to every
+    # value (see Get-InstallerValue below), so parameter binding would reject a
+    # perfectly valid mode before this script gets a chance to clean it up.
     [string]$Mode = 'readonly',
 
     [string]$Username = 'admin',
@@ -48,6 +50,54 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# MSI directory properties always end in a backslash, and a backslash directly
+# before the closing quote escapes that quote on a Windows command line. The
+# arguments after it then merge into one - a folder property would swallow
+# everything up to the next quote, producing paths like
+# "C:\Sync-Daten\NetBoxLocal" -NetBoxServer "https://...".
+#
+# The installer therefore appends a sentinel to every value so the closing quote
+# can never sit behind a backslash. It is stripped here, together with any
+# trailing separator.
+function Get-InstallerValue {
+    param([string]$Raw)
+
+    if ($null -eq $Raw) { return '' }
+
+    $value = $Raw
+    if ($value.EndsWith('|')) { $value = $value.Substring(0, $value.Length - 1) }
+    return $value.Trim().TrimEnd('\')
+}
+
+$Mode             = Get-InstallerValue $Mode
+$Username         = Get-InstallerValue $Username
+$Password         = Get-InstallerValue $Password
+$ReadOnlyUsername = Get-InstallerValue $ReadOnlyUsername
+$ReadOnlyPassword = Get-InstallerValue $ReadOnlyPassword
+$SyncRoot         = Get-InstallerValue $SyncRoot
+$NetBoxServer     = Get-InstallerValue $NetBoxServer
+$ApiKey           = Get-InstallerValue $ApiKey
+$ScriptPath       = Get-InstallerValue $ScriptPath
+
+if ([string]::IsNullOrWhiteSpace($Mode)) { $Mode = 'readonly' }
+if ([string]::IsNullOrWhiteSpace($Username)) { $Username = 'admin' }
+if ([string]::IsNullOrWhiteSpace($ReadOnlyUsername)) { $ReadOnlyUsername = 'viewer' }
+
+$Mode = $Mode.ToLowerInvariant()
+if (@('readonly', 'superuser', 'both') -notcontains $Mode) {
+    Write-Warning "Unknown mode '$Mode'; falling back to 'readonly'."
+    $Mode = 'readonly'
+}
+
+# A path that arrived mangled would otherwise be written into the configuration
+# and only surface later, when the launcher tries to use it.
+foreach ($pair in @(@{ Name = 'SyncRoot'; Value = $SyncRoot }, @{ Name = 'ScriptPath'; Value = $ScriptPath })) {
+    if ([string]::IsNullOrWhiteSpace($pair.Value)) { continue }
+    if ($pair.Value.IndexOfAny([IO.Path]::GetInvalidPathChars()) -ge 0 -or $pair.Value -match '["|]') {
+        throw "The value for $($pair.Name) is not a usable path: $($pair.Value)"
+    }
+}
 
 if (-not $ConfigPath) {
     $rootDir    = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
