@@ -123,10 +123,21 @@ Write-Ok 'pip bootstrapped'
 
 Write-Step 'NetBox: place source tree and patch requirements'
 
+# Pick the version the manifest asks for, by name. Taking "the first directory
+# found" silently built the wrong release whenever staging still held an earlier
+# one: sorted alphabetically, netbox-4.5.9 comes before netbox-4.6.8, so a
+# version switch appeared to work while the bundle kept the old code.
+$expectedName = "netbox-$($manifest.netboxVersion)"
 $netboxRoot = Get-ChildItem -Path (Join-Path $StagingDir 'netbox') -Directory |
-              Where-Object { $_.Name -like 'netbox-*' } |
+              Where-Object { $_.Name -eq $expectedName } |
               Select-Object -First 1
-if ($null -eq $netboxRoot) { throw 'NetBox source directory not found in staging' }
+
+if ($null -eq $netboxRoot) {
+    $present = (Get-ChildItem -Path (Join-Path $StagingDir 'netbox') -Directory).Name -join ', '
+    throw "Staging has no $expectedName. Present: $present. Run fetch-components.ps1 first."
+}
+
+Write-Ok "using $($netboxRoot.Name)"
 
 $netboxDst = Join-Path $BundleDir 'netbox'
 Copy-Tree -Source $netboxRoot.FullName -Destination $netboxDst

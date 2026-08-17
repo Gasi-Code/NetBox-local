@@ -76,9 +76,11 @@ function Expand-ZipTo {
 function Expand-TarTo {
     param([string]$Archive, [string]$Destination)
 
-    if (-not (Test-Path $Destination)) {
-        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-    }
+    # Clear the target first. tar extracts alongside whatever is already there,
+    # so switching NetBox versions used to leave both trees in staging - and the
+    # build then picked whichever sorted first, quietly ignoring the switch.
+    if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     # Windows ships bsdtar, which handles both gzip and xz.
     & tar.exe -xf $Archive -C $Destination
     if ($LASTEXITCODE -ne 0) {
