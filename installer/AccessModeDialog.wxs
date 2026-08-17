@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Adds a dialog to the standard WixUI_InstallDir sequence that asks how NetBox
+  Local will be used and collects the passwords.
+
+  The dialog is inserted between the installation directory page and the final
+  confirmation, so the flow reads: licence -> folder -> access mode -> install.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+
+    <!-- Defaults match config\NetBoxLocal.json as shipped. -->
+    <Property Id="ACCESSMODE" Value="readonly" />
+    <Property Id="NBUSER" Value="admin" />
+    <Property Id="NBROUSER" Value="viewer" />
+    <Property Id="NBPASSWORD" Hidden="yes" />
+    <Property Id="NBROPASSWORD" Hidden="yes" />
+
+    <UI>
+      <Dialog Id="AccessModeDlg" Width="370" Height="270" Title="[ProductName] Setup">
+
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="250" Height="15" Transparent="yes"
+                 NoPrefix="yes" Text="{\WixUI_Font_Title}How will NetBox Local be used?" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15" Transparent="yes"
+                 NoPrefix="yes" Text="Choose the access mode and set the passwords." />
+
+        <!-- Access mode -->
+        <Control Id="ModeGroup" Type="RadioButtonGroup" X="25" Y="55" Width="335" Height="52"
+                 Property="ACCESSMODE">
+          <RadioButtonGroup Property="ACCESSMODE">
+            <RadioButton Value="readonly"  X="0" Y="0"  Width="335" Height="16"
+                         Text="Read-only - a copy for looking things up. Editing is blocked." />
+            <RadioButton Value="superuser" X="0" Y="17" Width="335" Height="16"
+                         Text="Full access - use as a standalone local NetBox." />
+            <RadioButton Value="both"      X="0" Y="34" Width="335" Height="16"
+                         Text="Both - one full-access and one read-only account." />
+          </RadioButtonGroup>
+        </Control>
+
+        <!-- Primary account -->
+        <Control Id="MainLabel" Type="Text" X="20" Y="115" Width="335" Height="10"
+                 Text="{\WixUI_Font_Title}Primary account" />
+
+        <Control Id="UserLabel" Type="Text" X="25" Y="132" Width="70" Height="12" Text="&amp;User name:" />
+        <Control Id="UserEdit" Type="Edit" X="100" Y="130" Width="120" Height="16" Property="NBUSER" />
+
+        <Control Id="PwLabel" Type="Text" X="25" Y="152" Width="70" Height="12" Text="&amp;Password:" />
+        <Control Id="PwEdit" Type="Edit" X="100" Y="150" Width="120" Height="16"
+                 Property="NBPASSWORD" Password="yes" />
+        <Control Id="PwHint" Type="Text" X="228" Y="152" Width="132" Height="26"
+                 Text="Leave empty to have one generated on first start." />
+
+        <!-- Second account, only relevant for "both" -->
+        <Control Id="RoLabel" Type="Text" X="20" Y="180" Width="335" Height="10"
+                 Text="{\WixUI_Font_Title}Read-only account">
+          <Condition Action="hide"><![CDATA[ACCESSMODE <> "both"]]></Condition>
+          <Condition Action="show"><![CDATA[ACCESSMODE = "both"]]></Condition>
+        </Control>
+
+        <Control Id="RoUserLabel" Type="Text" X="25" Y="197" Width="70" Height="12" Text="U&amp;ser name:">
+          <Condition Action="hide"><![CDATA[ACCESSMODE <> "both"]]></Condition>
+          <Condition Action="show"><![CDATA[ACCESSMODE = "both"]]></Condition>
+        </Control>
+        <Control Id="RoUserEdit" Type="Edit" X="100" Y="195" Width="120" Height="16" Property="NBROUSER">
+          <Condition Action="hide"><![CDATA[ACCESSMODE <> "both"]]></Condition>
+          <Condition Action="show"><![CDATA[ACCESSMODE = "both"]]></Condition>
+        </Control>
+
+        <Control Id="RoPwLabel" Type="Text" X="25" Y="217" Width="70" Height="12" Text="P&amp;assword:">
+          <Condition Action="hide"><![CDATA[ACCESSMODE <> "both"]]></Condition>
+          <Condition Action="show"><![CDATA[ACCESSMODE = "both"]]></Condition>
+        </Control>
+        <Control Id="RoPwEdit" Type="Edit" X="100" Y="215" Width="120" Height="16"
+                 Property="NBROPASSWORD" Password="yes">
+          <Condition Action="hide"><![CDATA[ACCESSMODE <> "both"]]></Condition>
+          <Condition Action="show"><![CDATA[ACCESSMODE = "both"]]></Condition>
+        </Control>
+
+        <!-- Buttons -->
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+        </Control>
+
+      </Dialog>
+    </UI>
+
+  </Fragment>
+</Wix>

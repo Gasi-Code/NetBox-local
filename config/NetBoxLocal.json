@@ -1,0 +1,44 @@
+{
+  "_comment": "Zentrale Konfiguration fuer NetBox Local. Diese Datei ist die einzige Stelle, an der Zugang, Ports und Importquelle eingestellt werden. Aenderungen wirken beim naechsten Start.",
+
+  "webUser": {
+    "_comment": "Anmeldung an der lokalen NetBox-Oberflaeche. Die Konten werden bei JEDEM Start entsprechend dieser Datei gesetzt - ein hier geaendertes Kennwort gilt also ohne weiteren Schritt.",
+
+    "mode": "readonly",
+    "_modeComment": "readonly = nur ein Lesekonto; NetBox blendet alle Bearbeiten-Schaltflaechen aus (empfohlen fuer Notfallnotebooks). superuser = nur ein Vollzugriffskonto; sinnvoll, wenn NetBox Local als eigenstaendige lokale NetBox ohne Docker oder VM genutzt wird. both = beide Konten nebeneinander, Anmeldung je nach Bedarf.",
+
+    "username": "admin",
+    "password": "",
+    "_passwordComment": "Leer = beim ersten Start wird ein zufaelliges erzeugt und unter %LOCALAPPDATA%\\NetBoxLocal\\secrets\\ abgelegt. Eingetragen = wird bei jedem Start durchgesetzt.",
+
+    "readOnlyUsername": "viewer",
+    "readOnlyPassword": "",
+    "_readOnlyComment": "Nur bei mode = both verwendet. Bei mode = readonly gilt das Konto aus 'username'."
+  },
+
+  "import": {
+    "_comment": "Woher der Startvorgang den einzuspielenden Datenstand nimmt. syncRoot ist das Verzeichnis, in das Sync-NetBoxExport.ps1 seine Wochentags-Archive schreibt.",
+    "syncRoot": "C:\\Sync-Daten\\NetBoxLocal",
+    "autoImportOnStart": true,
+    "_autoImportComment": "true = beim Start automatisch den neuesten Export einspielen. false = nur starten; sinnvoll, wenn NetBox Local als eigenstaendige lokale Instanz mit eigenen Daten genutzt wird.",
+    "maxAgeWarningDays": 8,
+    "_maxAgeComment": "Ist der Datenstand aelter als dies, wird beim Start deutlich gewarnt. Ein veralteter Stand, der wie ein aktueller aussieht, ist im Stoerfall gefaehrlicher als gar keiner."
+  },
+
+  "ports": {
+    "_comment": "Alle Dienste lauschen ausschliesslich auf 127.0.0.1. Nur aendern, wenn eine andere Anwendung diese Ports belegt.",
+    "postgres": 55432,
+    "garnet": 56379,
+    "web": 8001
+  },
+
+  "paths": {
+    "_comment": "dataRoot enthaelt Datenbank, Logs und Zugangsdaten. Leer lassen fuer die Vorgabe %LOCALAPPDATA%\\NetBoxLocal.",
+    "dataRoot": ""
+  },
+
+  "browser": {
+    "_comment": "openOnStart oeffnet nach dem Hochfahren automatisch die Oberflaeche im Standardbrowser.",
+    "openOnStart": true
+  }
+}

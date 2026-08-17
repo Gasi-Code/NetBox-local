@@ -1,0 +1,90 @@
+﻿{
+    "_comment":  "Gepinnte Binaerkomponenten fuer das NetBox-Local-Bundle. sha256 wird beim ersten erfolgreichen Fetch durch fetch-components.ps1 eingetragen und ist danach verbindlich.",
+    "_verified":  "2026-08-17",
+    "netboxVersion":  "4.5.9",
+    "components":  [
+                       {
+                           "name":  "python",
+                           "version":  "3.13.15",
+                           "url":  "https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip",
+                           "sha256":  "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf",
+                           "sizeMB":  10.5,
+                           "archive":  "zip",
+                           "target":  "python",
+                           "license":  "PSF-2.0",
+                           "note":  "Embeddable-Paket: kein Installer, kein Admin. NetBox 4.5.9 erlaubt 3.12/3.13/3.14. 3.13.15 ist die hoechste Version mit embed-amd64-Paket."
+                       },
+                       {
+                           "name":  "get-pip",
+                           "version":  "latest",
+                           "url":  "https://bootstrap.pypa.io/get-pip.py",
+                           "sha256":  "fb24e693bab954209a063d90953621412ccad4a500905a726286e038f508ddf6",
+                           "sizeMB":  2.1,
+                           "archive":  "none",
+                           "target":  "python/get-pip.py",
+                           "license":  "MIT",
+                           "note":  "Embeddable Python bringt kein pip mit."
+                       },
+                       {
+                           "name":  "garnet",
+                           "version":  "2.1.4",
+                           "url":  "https://github.com/microsoft/garnet/releases/download/v2.1.4/win-x64-based-readytorun.zip",
+                           "sha256":  "2c429b145638224823cd55bf900dc932dcddebda690728665051dcc17901c412",
+                           "sizeMB":  47.2,
+                           "archive":  "zip",
+                           "target":  "garnet",
+                           "license":  "MIT",
+                           "note":  "Redis-Ersatz. RESP2/RESP3-kompatibel, self-contained (.NET-Runtime enthalten), ReadyToRun-vorkompiliert. Ersetzt den seit 2022 unmaintainten tporadowski/redis-Fork (Redis 5.0.14.1), der mit NetBox 4.7 ohnehin ausfaellt (Redis \u003c6.0 wird entfernt)."
+                       },
+                       {
+                           "name":  "dotnet-runtime",
+                           "version":  "10.0.11",
+                           "url":  "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.zip",
+                           "sha256":  "04da57a13b191005730dfead6eb0a530616f53ed7011b36885a291e1d94e84b6",
+                           "sizeMB":  0,
+                           "archive":  "zip",
+                           "target":  "dotnet",
+                           "license":  "MIT",
+                           "note":  "KORREKTUR: Das Garnet-Asset win-x64-based-readytorun.zip ist NICHT self-contained - \u0027based\u0027 bedeutet framework-based. GarnetServer.exe bricht ohne .NET 10 mit \u0027You must install or update .NET to run this application\u0027 ab. Microsoft erlaubt die Weitergabe der Runtime, daher wird sie mitgeliefert und ueber DOTNET_ROOT angezogen. .NET 10 ist bis 2028-11-14 supported; .NET 8 und 9 laufen beide im Nov 2026 aus."
+                       },
+                       {
+                           "name":  "postgresql",
+                           "version":  "17.5.0",
+                           "url":  "https://get.enterprisedb.com/postgresql/postgresql-17.5-1-windows-x64-binaries.zip",
+                           "sha256":  "795196df1b2855fd0c7fb52629c6cc16acaa85819912e732bd4c46863e77eb30",
+                           "sizeMB":  306.9,
+                           "archive":  "zip",
+                           "target":  "pgsql",
+                           "license":  "PostgreSQL",
+                           "note":  "VERWORFEN: Zonky (io.zonky.test.postgres) liefert nur 3 EXE - initdb, pg_ctl, postgres. Es fehlen pg_restore, pg_dump und psql, die der Importer zwingend braucht. EnterpriseDB liefert Server und Client-Tools in einer konsistenten Version. HEAD wird mit 403 beantwortet, GET funktioniert. Wird im Build-Schritt auf ~150 MB getrimmt (doc, include, symbols, pgAdmin, StackBuilder entfallen). NetBox 4.5 fordert PG 14+."
+                       },
+                       {
+                           "name":  "netbox",
+                           "version":  "4.5.9",
+                           "url":  "https://github.com/netbox-community/netbox/archive/refs/tags/v4.5.9.tar.gz",
+                           "sha256":  "fc293d892ba6cc143e2b436b1102ef38cf4a0b9d314b4a12b06ae7dfd4701f40",
+                           "sizeMB":  19.0,
+                           "archive":  "tar.gz",
+                           "target":  "netbox",
+                           "license":  "Apache-2.0",
+                           "note":  "WICHTIG: Diese Version MUSS der produktiven NetBox-Instanz entsprechen. Der Sync-Test vom 2026-08-17 meldet netBoxVersion 4.5.9; zuvor war hier 4.6.8 eingetragen, was zu Feldunterschieden beim Import gefuehrt haette. 4.5.9 verlangt Python 3.12-3.14 (3.13.15 passt), PostgreSQL 14+ und Redis 4.0+ - alle uebrigen Komponenten bleiben unveraendert. Bei einem Upgrade der Produktivinstanz muss diese Version nachgezogen werden."
+                       }
+                   ],
+    "requirementPatches":  [
+                               {
+                                   "match":  "gunicorn",
+                                   "action":  "remove",
+                                   "reason":  "gunicorn ist fork-basiert und laeuft nicht auf Windows. Ersetzt durch waitress."
+                               },
+                               {
+                                   "match":  "psycopg[c,pool]",
+                                   "action":  "replace",
+                                   "with":  "psycopg[binary,pool]",
+                                   "reason":  "psycopg-c hat 0 win_amd64-Wheels und braeuchte libpq + C-Compiler. psycopg-binary liefert ein cp313-win_amd64-Wheel."
+                               }
+                           ],
+    "extraRequirements":  [
+                              "waitress==3.0.2",
+                              "whitenoise==6.12.0"
+                          ]
+}
