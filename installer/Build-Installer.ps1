@@ -135,6 +135,7 @@ New-Item -ItemType Directory -Path $objDir -Force | Out-Null
     -out "$objDir\" `
     (Join-Path $InstallerDir 'NetBoxLocal.wxs') `
     (Join-Path $InstallerDir 'AccessModeDialog.wxs') `
+    (Join-Path $InstallerDir 'SyncSourceDialog.wxs') `
     $filesWxs
 if ($LASTEXITCODE -ne 0) { throw "candle failed with exit code $LASTEXITCODE" }
 Write-Ok 'compiled'
@@ -163,11 +164,13 @@ $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     -ext WixUtilExtension `
     -dSourceDir="$SourceDir" `
     -cultures:en-us `
+    -dWixUILicenseRtf="$(Join-Path $InstallerDir 'License.rtf')" `
     -sw1076 `
     -sice:ICE64 -sice:ICE38 -sice:ICE91 `
     -out $msi `
     (Join-Path $objDir 'NetBoxLocal.wixobj') `
     (Join-Path $objDir 'AccessModeDialog.wixobj') `
+    (Join-Path $objDir 'SyncSourceDialog.wixobj') `
     (Join-Path $objDir 'Files.wixobj')
 
 $stopwatch.Stop()

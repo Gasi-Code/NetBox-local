@@ -127,7 +127,7 @@
          that user's profile. -->
     <CustomAction Id="SetApplyOptionsCmd"
                   Property="ApplyInstallOptions"
-                  Value="&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]src\launcher\Set-InstallOptions.ps1&quot; -Mode &quot;[ACCESSMODE]&quot; -Username &quot;[NBUSER]&quot; -Password &quot;[NBPASSWORD]&quot; -ReadOnlyUsername &quot;[NBROUSER]&quot; -ReadOnlyPassword &quot;[NBROPASSWORD]&quot; -ConfigPath &quot;[INSTALLFOLDER]config\NetBoxLocal.json&quot;" />
+                  Value="&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]src\launcher\Set-InstallOptions.ps1&quot; -Mode &quot;[ACCESSMODE]&quot; -Username &quot;[NBUSER]&quot; -Password &quot;[NBPASSWORD]&quot; -ReadOnlyUsername &quot;[NBROUSER]&quot; -ReadOnlyPassword &quot;[NBROPASSWORD]&quot; -SyncRoot &quot;[SYNCROOT]&quot; -NetBoxServer &quot;[NBSERVER]&quot; -ApiKey &quot;[NBAPIKEY]&quot; -ScriptPath &quot;[SCRIPTPATH]&quot; -ConfigPath &quot;[INSTALLFOLDER]config\NetBoxLocal.json&quot; -ExportScriptPath &quot;[INSTALLFOLDER]src\export\Sync-NetBoxExport.ps1&quot;" />
 
     <CustomAction Id="ApplyInstallOptions"
                   BinaryKey="WixCA"
@@ -152,9 +152,12 @@
       </Publish>
 
       <Publish Dialog="AccessModeDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg">1</Publish>
-      <Publish Dialog="AccessModeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+      <Publish Dialog="AccessModeDlg" Control="Next" Event="NewDialog" Value="SyncSourceDlg">1</Publish>
 
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AccessModeDlg" Order="10">
+      <Publish Dialog="SyncSourceDlg" Control="Back" Event="NewDialog" Value="AccessModeDlg">1</Publish>
+      <Publish Dialog="SyncSourceDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="SyncSourceDlg" Order="10">
         <![CDATA[NOT Installed]]>
       </Publish>
     </UI>

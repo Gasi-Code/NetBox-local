@@ -1,8 +1,8 @@
-# Synchronisation des vollstaendigen NetBox-Bestandes
+# Exports the complete NetBox dataset over the REST API
 #
-# Erweiterung: Ausweitung von 18 IPAM-Endpunkten auf den vollstaendigen
-#              NetBox-Bestand (~120 Endpunkte), Endpunkt-Discovery zur
-#              Laufzeit, Fehlertoleranz je Endpunkt.
+# Extended from an IPAM-only export to the complete NetBox dataset
+#              (~120 endpoints), with endpoint discovery at runtime and
+#              per-endpoint fault tolerance.
 #
 # Runs unattended on emergency notebooks and pulls a complete read-only copy of
 # NetBox into a rotating set of daily ZIP archives.
@@ -16,20 +16,20 @@
 #     reason spelled out next to each one
 
 # ---------------------------------------------------------------------------
-# Konfiguration
+# Configuration
 # ---------------------------------------------------------------------------
 
 $NetBoxServer        = "https://netbox.example.com/"
 $APIKey              = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 $AuthorizationScheme = "Token"
 
-$global:SkriptPath     = "C:\Sync-Skripte\Sync-NetBoxExport"
-$ServiceLogFile        = "$global:SkriptPath\Sync-NetBoxExport_Service.log"
+$global:ScriptPath     = "C:\Sync-Skripte\Sync-NetBoxExport"
+$ServiceLogFile        = "$global:ScriptPath\Sync-NetBoxExport_Service.log"
 $global:LocalSyncPath  = "C:\Sync-Daten\NetBoxLocal"
 
-$TimeoutSekunden = 300
-$Seitengroesse   = 500
-$MaxVersuche     = 3
+$TimeoutSeconds = 300
+$PageSize   = 500
+$MaxAttempts     = 3
 
 $PushURL = ""
 
@@ -37,44 +37,44 @@ $PushURL = ""
 # notebooks travel and get lost; anything in this list would turn a lost device
 # into a NetBox compromise or would bloat the archive without helping anyone
 # during an outage.
-$AusgeschlosseneEndpunkte = [ordered]@{
-    "api/users/tokens/"                = "SICHERHEIT: liefert API-Tokens im Klartext. Ein verlorenes Notebook waere damit ein Vollzugriff auf die produktive NetBox."
-    "api/users/users/"                 = "SICHERHEIT: personenbezogene Benutzerdaten, im Stoerfall ohne Nutzen."
-    "api/users/permissions/"           = "SICHERHEIT: Zugriffssteuerung der Produktivinstanz."
-    "api/users/groups/"                = "SICHERHEIT: Zugriffssteuerung der Produktivinstanz."
-    "api/users/config/"                = "Benutzerspezifische UI-Einstellungen, kein Bestandsdatum."
+$ExcludedEndpoints = [ordered]@{
+    "api/users/tokens/"                = "SECURITY: returns API tokens in clear text. A lost notebook would grant full access to the production NetBox."
+    "api/users/users/"                 = "SECURITY: personal user data, of no use during an outage."
+    "api/users/permissions/"           = "SECURITY: access control of the production instance."
+    "api/users/groups/"                = "SECURITY: access control of the production instance."
+    "api/users/config/"                = "Per-user interface settings, not inventory data."
 
-    "api/core/object-changes/"         = "VOLUMEN: vollstaendiges Changelog, haeufig Millionen Zeilen. Im Stoerfall wertlos."
-    "api/core/jobs/"                   = "Laufzeitzustand der Hintergrundjobs, kein Bestandsdatum."
-    "api/core/background-queues/"      = "Laufzeitzustand RQ."
-    "api/core/background-tasks/"       = "Laufzeitzustand RQ."
-    "api/core/background-workers/"     = "Laufzeitzustand RQ."
-    "api/core/data-files/"             = "VOLUMEN: enthaelt Dateiinhalte synchronisierter Datenquellen."
+    "api/core/object-changes/"         = "VOLUME: the full changelog, often millions of rows. Useless during an outage."
+    "api/core/jobs/"                   = "Runtime state of background jobs, not inventory data."
+    "api/core/background-queues/"      = "RQ runtime state."
+    "api/core/background-tasks/"       = "RQ runtime state."
+    "api/core/background-workers/"     = "RQ runtime state."
+    "api/core/data-files/"             = "VOLUME: contains the file contents of synchronised data sources."
 
-    "api/extras/scripts/"              = "Skriptdefinitionen; antwortet ohne hinterlegte Dateien mit Fehlern."
-    "api/extras/dashboard/"            = "Kein Listen-Endpunkt, liefert das Dashboard des aufrufenden Benutzers."
-    "api/extras/notifications/"        = "Benutzerspezifisch."
-    "api/extras/subscriptions/"        = "Benutzerspezifisch."
-    "api/extras/bookmarks/"            = "Benutzerspezifisch."
-    "api/extras/saved-filters/"        = "Benutzerspezifisch."
-    "api/extras/table-configs/"        = "Benutzerspezifisch."
+    "api/extras/scripts/"              = "Script definitions; errors out when no script files are present."
+    "api/extras/dashboard/"            = "Not a list endpoint; returns the calling user's dashboard."
+    "api/extras/notifications/"        = "Per-user data."
+    "api/extras/subscriptions/"        = "Per-user data."
+    "api/extras/bookmarks/"            = "Per-user data."
+    "api/extras/saved-filters/"        = "Per-user data."
+    "api/extras/table-configs/"        = "Per-user data."
 
-    "api/dcim/connected-device/"       = "Kein Listen-Endpunkt; erfordert die Parameter peer_device und peer_interface."
-    "api/schema/redoc/"                = "HTML-Dokumentationsseite, kein JSON."
-    "api/schema/swagger-ui/"           = "HTML-Dokumentationsseite, kein JSON."
+    "api/dcim/connected-device/"       = "Not a list endpoint; requires the peer_device and peer_interface parameters."
+    "api/schema/redoc/"                = "HTML documentation page, not JSON."
+    "api/schema/swagger-ui/"           = "HTML documentation page, not JSON."
 }
 
 # Query parameters applied per endpoint. NetBox renders config contexts into
 # every device and virtual machine record, which multiplies the export size for
 # data that is already exported once via extras/config-contexts.
-$EndpunktParameter = [ordered]@{
+$EndpointParameters = [ordered]@{
     "api/dcim/devices/"                    = "exclude=config_context"
     "api/virtualization/virtual-machines/" = "exclude=config_context"
 }
 
 # Fallback list, used only when endpoint discovery fails. Mirrors the endpoints
 # of NetBox 4.6.8 minus the exclusions above.
-$FallbackEndpunkte = @(
+$FallbackEndpoints = @(
     "api/circuits/circuit-group-assignments/", "api/circuits/circuit-groups/",
     "api/circuits/circuit-terminations/", "api/circuits/circuit-types/",
     "api/circuits/circuits/", "api/circuits/provider-accounts/",
@@ -130,10 +130,10 @@ $FallbackEndpunkte = @(
 )
 
 # ---------------------------------------------------------------------------
-# Hilfsfunktionen
+# Helper functions
 # ---------------------------------------------------------------------------
 
-# Schreibt einen Eintrag in das Service-Log
+# Appends an entry to the service log
 Function Write-ServiceLog {
     Param (
         [Parameter(Mandatory = $true)]
@@ -143,24 +143,24 @@ Function Write-ServiceLog {
         [string]$Level = "INFO"
     )
 
-    $LogEintrag = (
+    $logEntry = (
         (Get-Date -Format "yyyy.MM.dd HH:mm:ss") +
         " [" + $Level + "] - " +
         $Message +
         " (" + $env:COMPUTERNAME + ")"
     )
 
-    $LogEintrag |
+    $logEntry |
         Out-File `
             -Append `
             -FilePath $ServiceLogFile `
             -Encoding utf8 `
             -Force
 
-    Write-Host $LogEintrag
+    Write-Host $logEntry
 }
 
-# Verbindet die NetBox-Basisadresse und den API-Pfad
+# Joins the NetBox base address and an API path
 Function Join-NetBoxURL {
     Param (
         [Parameter(Mandatory = $true)]
@@ -177,7 +177,7 @@ Function Join-NetBoxURL {
     )
 }
 
-# Speichert Text als UTF-8 ohne BOM
+# Writes text as UTF-8 without a BOM
 Function Write-UTF8File {
     Param (
         [Parameter(Mandatory = $true)]
@@ -188,33 +188,33 @@ Function Write-UTF8File {
         [string]$Content
     )
 
-    $UTF8Encoding = New-Object System.Text.UTF8Encoding($false)
+    $utf8Encoding = New-Object System.Text.UTF8Encoding($false)
 
     [System.IO.File]::WriteAllText(
         $Path,
         $Content,
-        $UTF8Encoding
+        $utf8Encoding
     )
 }
 
-# Wandelt einen API-Pfad in einen Dateinamen um
-# "api/dcim/device-roles/" wird zu "dcim_device-roles"
-Function ConvertTo-Endpunktname {
+# Turns an API path into a file name
+# "api/dcim/device-roles/" becomes "dcim_device-roles"
+Function ConvertTo-EndpointName {
     Param (
         [Parameter(Mandatory = $true)]
         [string]$APIPath
     )
 
-    $Teile = $APIPath.Trim("/").Split("/")
+    $parts = $APIPath.Trim("/").Split("/")
 
-    If ($Teile.Length -ge 3) {
-        Return ($Teile[1] + "_" + $Teile[2])
+    If ($parts.Length -ge 3) {
+        Return ($parts[1] + "_" + $parts[2])
     }
 
-    Return ($Teile[-1])
+    Return ($parts[-1])
 }
 
-# Ruft einen NetBox-Endpunkt mit Wiederholungsversuchen ab
+# Calls a NetBox endpoint, retrying on failure
 Function Invoke-NetBoxGET {
     Param (
         [Parameter(Mandatory = $true)]
@@ -224,44 +224,44 @@ Function Invoke-NetBoxGET {
         [hashtable]$Headers
     )
 
-    For ($Versuch = 1; $Versuch -le $MaxVersuche; $Versuch++) {
+    For ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         Try {
             Return Invoke-RestMethod `
                 -Uri $URL `
                 -Method GET `
                 -Headers $Headers `
-                -TimeoutSec $TimeoutSekunden `
+                -TimeoutSec $TimeoutSeconds `
                 -UseBasicParsing `
                 -ErrorAction Stop
         }
         Catch {
-            If ($Versuch -ge $MaxVersuche) {
+            If ($attempt -ge $MaxAttempts) {
                 Throw
             }
 
-            $Wartezeit = [Math]::Pow(2, $Versuch)
+            $waitSeconds = [Math]::Pow(2, $attempt)
 
             Write-ServiceLog `
                 -Level "WARN" `
                 -Message (
-                    "API-Aufruf fehlgeschlagen. Versuch " +
-                    $Versuch + " von " + $MaxVersuche +
-                    ". Neuer Versuch in " + $Wartezeit +
-                    " Sekunden. URL: " + $URL +
-                    ". Fehler: " + $_.Exception.Message
+                    "API call failed. Attempt " +
+                    $attempt + " of " + $MaxAttempts +
+                    ". Retrying in " + $waitSeconds +
+                    " seconds. URL: " + $URL +
+                    ". Error: " + $_.Exception.Message
                 )
 
-            Start-Sleep -Seconds $Wartezeit
+            Start-Sleep -Seconds $waitSeconds
         }
     }
 }
 
-# Ermittelt die Listen-Endpunkte der angebundenen NetBox-Instanz
+# Discovers the list endpoints of the connected NetBox instance
 #
 # Discovery beats a hard-coded list: a NetBox upgrade that introduces new models
 # would otherwise be exported incompletely without anyone noticing. The root
 # document lists the applications, each application document lists its models.
-Function Get-NetBoxEndpunkte {
+Function Get-NetBoxEndpoints {
     Param (
         [Parameter(Mandatory = $true)]
         [string]$BaseURL,
@@ -270,46 +270,46 @@ Function Get-NetBoxEndpunkte {
         [hashtable]$Headers
     )
 
-    $Gefunden = New-Object System.Collections.ArrayList
+    $found = New-Object System.Collections.ArrayList
 
     # Not every entry below /api/ is an application index. 'status' returns a
     # flat dictionary of version information, so treating its keys as model
     # names produces requests like api/status/django-version/ that 404.
-    $KeineAnwendungen = @("status")
+    $NotApplications = @("status")
 
-    $WurzelURL = Join-NetBoxURL -BaseURL $BaseURL -APIPath "api/"
-    $Wurzel = Invoke-NetBoxGET -URL $WurzelURL -Headers $Headers
+    $rootURL = Join-NetBoxURL -BaseURL $BaseURL -APIPath "api/"
+    $root = Invoke-NetBoxGET -URL $rootURL -Headers $Headers
 
-    ForEach ($App in $Wurzel.PSObject.Properties) {
-        If ($KeineAnwendungen -contains $App.Name) { Continue }
+    ForEach ($App in $root.PSObject.Properties) {
+        If ($NotApplications -contains $App.Name) { Continue }
 
         Try {
             $AppURL = Join-NetBoxURL -BaseURL $BaseURL -APIPath ("api/" + $App.Name + "/")
-            $AppDokument = Invoke-NetBoxGET -URL $AppURL -Headers $Headers
+            $appDocument = Invoke-NetBoxGET -URL $AppURL -Headers $Headers
         }
         Catch {
             Continue
         }
 
-        If ($null -eq $AppDokument) { Continue }
+        If ($null -eq $appDocument) { Continue }
 
-        ForEach ($Modell in $AppDokument.PSObject.Properties) {
+        ForEach ($model in $appDocument.PSObject.Properties) {
             # An application index maps model names to their absolute URLs. A
             # value that is not a URL means this is a data document rather than
             # an index, and its keys are not endpoints.
-            $Wert = [string]$Modell.Value
+            $value = [string]$model.Value
 
-            If (-not ($Wert -match '^https?://')) { Continue }
+            If (-not ($value -match '^https?://')) { Continue }
 
-            $Pfad = "api/" + $App.Name + "/" + $Modell.Name + "/"
-            [void]$Gefunden.Add($Pfad)
+            $path = "api/" + $App.Name + "/" + $model.Name + "/"
+            [void]$found.Add($path)
         }
     }
 
-    Return $Gefunden.ToArray()
+    Return $found.ToArray()
 }
 
-# Ruft alle Seiten eines NetBox-Listenendpunkts ab
+# Retrieves every page of a NetBox list endpoint
 Function Get-AllNetBoxObjects {
     Param (
         [Parameter(Mandatory = $true)]
@@ -320,10 +320,10 @@ Function Get-AllNetBoxObjects {
     )
 
     If ($EndpointURL.Contains("?")) {
-        $Trennzeichen = "&"
+        $separator = "&"
     }
     Else {
-        $Trennzeichen = "?"
+        $separator = "?"
     }
 
     # Ordering by primary key makes pagination deterministic. Without it a
@@ -331,55 +331,55 @@ Function Get-AllNetBoxObjects {
     # skip records.
     $NextURL = (
         $EndpointURL +
-        $Trennzeichen +
-        "limit=" + $Seitengroesse +
+        $separator +
+        "limit=" + $PageSize +
         "&ordering=id"
     )
 
-    $AlleObjekte = New-Object System.Collections.ArrayList
-    $ErwarteteAnzahl = $null
+    $allObjects = New-Object System.Collections.ArrayList
+    $expectedCount = $null
 
     While (-not [string]::IsNullOrWhiteSpace($NextURL)) {
-        $Antwort = Invoke-NetBoxGET `
+        $response = Invoke-NetBoxGET `
             -URL $NextURL `
             -Headers $Headers
 
-        If ($null -eq $Antwort) {
+        If ($null -eq $response) {
             Throw (
-                "Der NetBox-Endpunkt '" + $NextURL +
-                "' hat keine Antwort geliefert."
+                "The NetBox endpoint '" + $NextURL +
+                "' returned no response."
             )
         }
 
-        If ($null -eq $Antwort.PSObject.Properties["results"]) {
+        If ($null -eq $response.PSObject.Properties["results"]) {
             Throw (
-                "Unerwartetes API-Format bei '" + $NextURL +
-                "'. Die Eigenschaft 'results' fehlt."
+                "Unexpected API format at '" + $NextURL +
+                "'. The 'results' property is missing."
             )
         }
 
-        If ($null -eq $Antwort.PSObject.Properties["count"]) {
+        If ($null -eq $response.PSObject.Properties["count"]) {
             Throw (
-                "Unerwartetes API-Format bei '" + $NextURL +
-                "'. Die Eigenschaft 'count' fehlt."
+                "Unexpected API format at '" + $NextURL +
+                "'. The 'count' property is missing."
             )
         }
 
-        If ($null -eq $ErwarteteAnzahl) {
-            $ErwarteteAnzahl = [int64]$Antwort.count
+        If ($null -eq $expectedCount) {
+            $expectedCount = [int64]$response.count
         }
 
-        ForEach ($Objekt in @($Antwort.results)) {
-            [void]$AlleObjekte.Add($Objekt)
+        ForEach ($object in @($response.results)) {
+            [void]$allObjects.Add($object)
         }
 
-        $NextURL = [string]$Antwort.next
+        $NextURL = [string]$response.next
     }
 
-    If ($null -eq $ErwarteteAnzahl) {
+    If ($null -eq $expectedCount) {
         Throw (
-            "Die Objektanzahl konnte fuer den Endpunkt '" +
-            $EndpointURL + "' nicht ermittelt werden."
+            "The object count could not be determined for endpoint '" +
+            $EndpointURL + "'."
         )
     }
 
@@ -387,21 +387,21 @@ Function Get-AllNetBoxObjects {
     # actively being edited during the export window this happens legitimately,
     # so it is now reported rather than fatal - the data is still usable, just
     # not a perfectly consistent snapshot.
-    If ($AlleObjekte.Count -ne $ErwarteteAnzahl) {
+    If ($allObjects.Count -ne $expectedCount) {
         Write-ServiceLog `
             -Level "WARN" `
             -Message (
-                "Objektanzahl weicht ab (Datenaenderung waehrend des Exports?). " +
-                "Erwartet: " + $ErwarteteAnzahl +
-                "; erhalten: " + $AlleObjekte.Count +
-                "; Endpunkt: " + $EndpointURL
+                "Object count differs (data changed during the export?). " +
+                "Expected: " + $expectedCount +
+                "; received: " + $allObjects.Count +
+                "; endpoint: " + $EndpointURL
             )
     }
 
-    Return $AlleObjekte.ToArray()
+    Return $allObjects.ToArray()
 }
 
-# Bereitet verschachtelte NetBox-Objekte fuer den CSV-Export auf
+# Flattens nested NetBox objects for the CSV export
 #
 # Nested objects are serialised as compact JSON inside the cell. Note that the
 # resulting CSV is a human-readable view, NOT something NetBox can import again:
@@ -413,24 +413,24 @@ Function ConvertTo-NetBoxCSVObject {
         [object[]]$InputObjects
     )
 
-    ForEach ($Objekt in $InputObjects) {
-        $CSVZeile = [ordered]@{}
+    ForEach ($object in $InputObjects) {
+        $csvRow = [ordered]@{}
 
-        ForEach ($Eigenschaft in $Objekt.PSObject.Properties) {
-            $Wert = $Eigenschaft.Value
+        ForEach ($property in $object.PSObject.Properties) {
+            $value = $property.Value
 
-            If ($null -eq $Wert) {
-                $CSVZeile[$Eigenschaft.Name] = $null
+            If ($null -eq $value) {
+                $csvRow[$property.Name] = $null
             }
             ElseIf (
-                ($Wert -is [string]) -or
-                ($Wert -is [ValueType])
+                ($value -is [string]) -or
+                ($value -is [ValueType])
             ) {
-                $CSVZeile[$Eigenschaft.Name] = $Wert
+                $csvRow[$property.Name] = $value
             }
             Else {
-                $CSVZeile[$Eigenschaft.Name] = (
-                    $Wert |
+                $csvRow[$property.Name] = (
+                    $value |
                         ConvertTo-Json `
                             -Depth 30 `
                             -Compress
@@ -438,12 +438,12 @@ Function ConvertTo-NetBoxCSVObject {
             }
         }
 
-        [PSCustomObject]$CSVZeile
+        [PSCustomObject]$csvRow
     }
 }
 
-# Ermittelt den englischen Wochentagsnamen (kulturunabhaengig)
-Function Get-NetBoxWochentag {
+# Returns the English weekday name, independent of locale
+Function Get-NetBoxWeekday {
     Return (
         (Get-Date).ToString(
             "dddd",
@@ -452,74 +452,74 @@ Function Get-NetBoxWochentag {
     )
 }
 
-# Ermittelt den Dateinamen fuer den Wochentags-Rotationsslot
-Function Get-NetBoxRotationDateiname {
-    Return (Get-NetBoxWochentag) + ".zip"
+# Returns the file name of the weekday rotation slot
+Function Get-NetBoxRotationFileName {
+    Return (Get-NetBoxWeekday) + ".zip"
 }
 
-# Aktualisiert die menschenlesbare Statuszeile eines Wochentags in status.txt
-Function Update-NetBoxStatusDatei {
+# Updates the human-readable status line for one weekday in status.txt
+Function Update-NetBoxStatusFile {
     Param (
         [Parameter(Mandatory = $true)]
-        [string]$Wochentag,
+        [string]$Weekday,
 
         [Parameter(Mandatory = $true)]
-        [string]$Statuszeile
+        [string]$StatusLine
     )
 
-    $StatusPfad = Join-Path $global:LocalSyncPath "status.txt"
+    $statusPath = Join-Path $global:LocalSyncPath "status.txt"
 
-    $WochentageReihenfolge = @(
+    $WeekdayeReihenfolge = @(
         "Monday", "Tuesday", "Wednesday", "Thursday",
         "Friday", "Saturday", "Sunday"
     )
 
-    $Eintraege = [ordered]@{}
+    $entries = [ordered]@{}
 
-    ForEach ($Tag in $WochentageReihenfolge) {
-        $Eintraege[$Tag] = $null
+    ForEach ($day in $WeekdayeReihenfolge) {
+        $entries[$day] = $null
     }
 
-    If (Test-Path -Path $StatusPfad) {
-        ForEach ($Zeile in (Get-Content -Path $StatusPfad -Encoding UTF8)) {
-            If ($Zeile -match '^(\w+):\s?(.*)$') {
-                $Tag = $Matches[1]
+    If (Test-Path -Path $statusPath) {
+        ForEach ($line in (Get-Content -Path $statusPath -Encoding UTF8)) {
+            If ($line -match '^(\w+):\s?(.*)$') {
+                $day = $Matches[1]
 
-                If ($Eintraege.Contains($Tag)) {
-                    $Eintraege[$Tag] = $Matches[2]
+                If ($entries.Contains($day)) {
+                    $entries[$day] = $Matches[2]
                 }
             }
         }
     }
 
-    $Eintraege[$Wochentag] = $Statuszeile
+    $entries[$Weekday] = $StatusLine
 
-    $Zeilen = ForEach ($Tag in $WochentageReihenfolge) {
-        If ($null -ne $Eintraege[$Tag]) {
-            $Tag + ": " + $Eintraege[$Tag]
+    $linen = ForEach ($day in $WeekdayeReihenfolge) {
+        If ($null -ne $entries[$day]) {
+            $day + ": " + $entries[$day]
         }
     }
 
     Write-UTF8File `
-        -Path $StatusPfad `
-        -Content ($Zeilen -join "`r`n")
+        -Path $statusPath `
+        -Content ($linen -join "`r`n")
 }
 
-# Packt das Staging-Verzeichnis und veroeffentlicht es als Rotationsslot
+# Packs the staging directory and publishes it as a rotation slot
 Function Publish-NetBoxExport {
     Param (
         [Parameter(Mandatory = $true)]
         [string]$StagingPath,
 
         [Parameter(Mandatory = $true)]
-        [string]$ZielVerzeichnis
+        [string]$TargetDirectory
     )
 
-    $ZielDateiname = Get-NetBoxRotationDateiname
-    $ZielPfad = Join-Path $ZielVerzeichnis $ZielDateiname
+    $targetFileName = Get-NetBoxRotationFileName
+    $targetPath = Join-Path $TargetDirectory $targetFileName
 
-    $TempZipPfad = Join-Path `
-        $ZielVerzeichnis `
+    $tempZipPath = Join-Path `
+        $TargetDirectory `
         (
             "staging-" +
             [Guid]::NewGuid().ToString("N") +
@@ -533,20 +533,20 @@ Function Publish-NetBoxExport {
 
     [System.IO.Compression.ZipFile]::CreateFromDirectory(
         $StagingPath,
-        $TempZipPfad,
+        $tempZipPath,
         [System.IO.Compression.CompressionLevel]::Optimal,
         $false
     )
 
     Move-Item `
-        -Path $TempZipPfad `
-        -Destination $ZielPfad `
+        -Path $tempZipPath `
+        -Destination $targetPath `
         -Force `
         -ErrorAction Stop
 }
 
 # ---------------------------------------------------------------------------
-# Hauptablauf
+# Main flow
 # ---------------------------------------------------------------------------
 
 Function Invoke-NetBoxExport {
@@ -562,14 +562,14 @@ Function Invoke-NetBoxExport {
 
     Try {
         If ([string]::IsNullOrWhiteSpace($NetBoxServer)) {
-            Throw "In der Konfiguration wurde kein NetBox-Server eingetragen."
+            Throw "No NetBox server is configured."
         }
 
         If ([string]::IsNullOrWhiteSpace($APIKey) -or
             ($APIKey -eq "NETBOX-API-TOKEN-HIER-EINTRAGEN") -or
             ($APIKey -match '^X+$')
         ) {
-            Throw "In der Konfiguration wurde kein NetBox-API-Token eingetragen."
+            Throw "No NetBox API token is configured."
         }
 
         $Headers = @{
@@ -581,23 +581,23 @@ Function Invoke-NetBoxExport {
         New-Item -ItemType Directory -Path $JSONPath -Force | Out-Null
         New-Item -ItemType Directory -Path $CSVPath  -Force | Out-Null
 
-        Write-ServiceLog -Message "NetBox-Gesamtexport gestartet."
+        Write-ServiceLog -Message "Full NetBox export started."
 
-        # --- Endpunkte ermitteln ---------------------------------------------
+        # --- Determine endpoints ---------------------------------------------
 
-        $EndpunktQuelle = "discovery"
+        $endpointSource = "discovery"
 
         Try {
-            $Entdeckt = @(
-                Get-NetBoxEndpunkte `
+            $discovered = @(
+                Get-NetBoxEndpoints `
                     -BaseURL $NetBoxServer `
                     -Headers $Headers
             )
 
-            If ($Entdeckt.Count -lt 50) {
+            If ($discovered.Count -lt 50) {
                 Throw (
-                    "Endpunkt-Discovery lieferte nur " + $Entdeckt.Count +
-                    " Eintraege; das ist unplausibel wenig."
+                    "Endpoint discovery returned only " + $discovered.Count +
+                    " entries, which is implausibly few."
                 )
             }
         }
@@ -605,91 +605,91 @@ Function Invoke-NetBoxExport {
             Write-ServiceLog `
                 -Level "WARN" `
                 -Message (
-                    "Endpunkt-Discovery fehlgeschlagen, verwende die statische " +
-                    "Fallback-Liste. Neue NetBox-Modelle werden dadurch " +
-                    "moeglicherweise nicht exportiert. Fehler: " +
+                    "Endpoint discovery failed; falling back to the static " +
+                    "list. New NetBox models may therefore " +
+                    "moeglicherweise nicht exportiert. Error: " +
                     $_.Exception.Message
                 )
 
-            $Entdeckt = $FallbackEndpunkte
-            $EndpunktQuelle = "fallback"
+            $discovered = $FallbackEndpoints
+            $endpointSource = "fallback"
         }
 
-        $Endpunkte = New-Object System.Collections.ArrayList
-        $Uebersprungen = New-Object System.Collections.ArrayList
+        $endpoints = New-Object System.Collections.ArrayList
+        $skipped = New-Object System.Collections.ArrayList
 
-        ForEach ($Pfad in ($Entdeckt | Sort-Object -Unique)) {
-            If ($AusgeschlosseneEndpunkte.Contains($Pfad)) {
-                [void]$Uebersprungen.Add($Pfad)
+        ForEach ($path in ($discovered | Sort-Object -Unique)) {
+            If ($ExcludedEndpoints.Contains($path)) {
+                [void]$skipped.Add($path)
             }
             Else {
-                [void]$Endpunkte.Add($Pfad)
+                [void]$endpoints.Add($path)
             }
         }
 
         Write-ServiceLog `
             -Message (
-                "Endpunkte ermittelt (" + $EndpunktQuelle + "): " +
-                $Endpunkte.Count + " werden exportiert, " +
-                $Uebersprungen.Count + " sind bewusst ausgeschlossen."
+                "Endpoints determined (" + $endpointSource + "): " +
+                $endpoints.Count + " will be exported, " +
+                $skipped.Count + " are deliberately excluded."
             )
 
         # Anything discovered that the fallback list does not know about is new
         # in this NetBox version and worth flagging.
-        ForEach ($Pfad in $Endpunkte) {
-            If ($FallbackEndpunkte -notcontains $Pfad) {
+        ForEach ($path in $endpoints) {
+            If ($FallbackEndpoints -notcontains $path) {
                 Write-ServiceLog `
                     -Level "WARN" `
                     -Message (
-                        "Neuer, bisher unbekannter Endpunkt gefunden: " + $Pfad +
-                        ". Bitte pruefen, ob er sicherheitsrelevant ist."
+                        "New, previously unknown endpoint found: " + $path +
+                        ". Check whether it is security-relevant."
                     )
             }
         }
 
         # --- Export ----------------------------------------------------------
 
-        $ObjektAnzahlen       = [ordered]@{}
-        $FehlerhafteEndpunkte = [ordered]@{}
-        $ExportDateien        = New-Object System.Collections.ArrayList
+        $objectCounts       = [ordered]@{}
+        $failedEndpoints = [ordered]@{}
+        $exportFiles        = New-Object System.Collections.ArrayList
 
-        ForEach ($Pfad in $Endpunkte) {
-            $Name = ConvertTo-Endpunktname -APIPath $Pfad
+        ForEach ($path in $endpoints) {
+            $name = ConvertTo-EndpointName -APIPath $path
 
             $EndpointURL = Join-NetBoxURL `
                 -BaseURL $NetBoxServer `
-                -APIPath $Pfad
+                -APIPath $path
 
-            If ($EndpunktParameter.Contains($Pfad)) {
-                $EndpointURL = $EndpointURL + "?" + $EndpunktParameter[$Pfad]
+            If ($EndpointParameters.Contains($path)) {
+                $EndpointURL = $EndpointURL + "?" + $EndpointParameters[$path]
             }
 
             # A single broken endpoint must not destroy the whole run. With
             # ~120 endpoints the odds of one failing are no longer negligible,
             # and a partial export still beats no export during an outage.
             Try {
-                Write-ServiceLog -Message ("Exportiere '" + $Name + "'.")
+                Write-ServiceLog -Message ("Exporting '" + $name + "'.")
 
-                $Objekte = @(
+                $objects = @(
                     Get-AllNetBoxObjects `
                         -EndpointURL $EndpointURL `
                         -Headers $Headers
                 )
 
-                $ObjektAnzahlen[$Name] = $Objekte.Count
+                $objectCounts[$name] = $objects.Count
 
-                $JSONFile = Join-Path $JSONPath ($Name + ".json")
-                $CSVFile  = Join-Path $CSVPath  ($Name + ".csv")
+                $JSONFile = Join-Path $JSONPath ($name + ".json")
+                $CSVFile  = Join-Path $CSVPath  ($name + ".csv")
 
-                $JSONInhalt = ConvertTo-Json `
-                    -InputObject $Objekte `
+                $jsonContent = ConvertTo-Json `
+                    -InputObject $objects `
                     -Depth 50
 
-                Write-UTF8File -Path $JSONFile -Content $JSONInhalt
+                Write-UTF8File -Path $JSONFile -Content $jsonContent
 
-                If ($Objekte.Count -gt 0) {
+                If ($objects.Count -gt 0) {
                     ConvertTo-NetBoxCSVObject `
-                        -InputObjects $Objekte |
+                        -InputObjects $objects |
                         Export-Csv `
                             -Path $CSVFile `
                             -NoTypeInformation `
@@ -705,99 +705,99 @@ Function Invoke-NetBoxExport {
                         ConvertFrom-Json -ErrorAction Stop
                 )
 
-                [void]$ExportDateien.Add($JSONFile)
-                [void]$ExportDateien.Add($CSVFile)
+                [void]$exportFiles.Add($JSONFile)
+                [void]$exportFiles.Add($CSVFile)
 
                 Write-ServiceLog `
                     -Message (
-                        "'" + $Name + "' erfolgreich exportiert (" +
-                        $Objekte.Count + " Objekte)."
+                        "'" + $name + "' exported successfully (" +
+                        $objects.Count + " objects)."
                     )
             }
             Catch {
-                $FehlerhafteEndpunkte[$Name] = $_.Exception.Message
+                $failedEndpoints[$name] = $_.Exception.Message
 
                 Write-ServiceLog `
                     -Level "ERROR" `
                     -Message (
-                        "Endpunkt '" + $Name + "' fehlgeschlagen, der Export " +
-                        "wird fortgesetzt. Fehler: " + $_.Exception.Message
+                        "Endpoint '" + $name + "' failed; the export " +
+                        "wird fortgesetzt. Error: " + $_.Exception.Message
                     )
             }
         }
 
         # --- Manifest --------------------------------------------------------
 
-        $NetBoxVersion = $null
+        $netBoxVersion = $null
 
         Try {
-            $StatusURL = Join-NetBoxURL `
+            $statusUrl = Join-NetBoxURL `
                 -BaseURL $NetBoxServer `
                 -APIPath "api/status/"
 
-            $NetBoxStatus = Invoke-NetBoxGET `
-                -URL $StatusURL `
+            $netBoxStatus = Invoke-NetBoxGET `
+                -URL $statusUrl `
                 -Headers $Headers
 
-            If ($null -ne $NetBoxStatus.PSObject.Properties["netbox-version"]) {
-                $NetBoxVersion = $NetBoxStatus."netbox-version"
+            If ($null -ne $netBoxStatus.PSObject.Properties["netbox-version"]) {
+                $netBoxVersion = $netBoxStatus."netbox-version"
             }
         }
         Catch {
             Write-ServiceLog `
                 -Level "WARN" `
                 -Message (
-                    "NetBox-Version konnte nicht gelesen werden. " +
-                    "Der Export wird trotzdem fortgesetzt."
+                    "The NetBox version could not be read. " +
+                    "The export continues regardless."
                 )
         }
 
-        If ($FehlerhafteEndpunkte.Count -eq 0) {
-            $Gesamtstatus = "complete"
+        If ($failedEndpoints.Count -eq 0) {
+            $overallStatus = "complete"
         }
         Else {
-            $Gesamtstatus = "partial"
+            $overallStatus = "partial"
         }
 
         $Manifest = [ordered]@{
-            status            = $Gesamtstatus
+            status            = $overallStatus
             exportTime        = (Get-Date).ToString("o")
             computerName      = $env:COMPUTERNAME
-            netBoxVersion     = $NetBoxVersion
-            endpointSource    = $EndpunktQuelle
-            endpointsExported = $Endpunkte.Count
-            endpointsExcluded = @($Uebersprungen)
-            failedEndpoints   = $FehlerhafteEndpunkte
-            objectCounts      = $ObjektAnzahlen
+            netBoxVersion     = $netBoxVersion
+            endpointSource    = $endpointSource
+            endpointsExported = $endpoints.Count
+            endpointsExcluded = @($skipped)
+            failedEndpoints   = $failedEndpoints
+            objectCounts      = $objectCounts
         }
 
-        $ManifestFile = Join-Path $StagingPath "manifest.json"
+        $manifestFile = Join-Path $StagingPath "manifest.json"
 
         Write-UTF8File `
-            -Path $ManifestFile `
+            -Path $manifestFile `
             -Content ($Manifest | ConvertTo-Json -Depth 20)
 
-        [void]$ExportDateien.Add($ManifestFile)
+        [void]$exportFiles.Add($manifestFile)
 
         # --- Pruefsummen -----------------------------------------------------
 
-        $Pruefsummen = ForEach ($Datei in $ExportDateien) {
-            $Hash = Get-FileHash -Path $Datei -Algorithm SHA256
+        $checksums = ForEach ($file in $exportFiles) {
+            $hash = Get-FileHash -Path $file -Algorithm SHA256
 
-            $RelativerPfad = $Datei.Substring(
+            $relativePath = $file.Substring(
                 $StagingPath.Length
             ).TrimStart([char]92)
 
-            ($Hash.Hash.ToLowerInvariant() + " *" + $RelativerPfad)
+            ($hash.Hash.ToLowerInvariant() + " *" + $relativePath)
         }
 
         Write-UTF8File `
             -Path (Join-Path $StagingPath "checksums.sha256") `
-            -Content ($Pruefsummen -join "`r`n")
+            -Content ($checksums -join "`r`n")
 
         # --- Veroeffentlichen ------------------------------------------------
 
-        $ZielDateiname = Get-NetBoxRotationDateiname
+        $targetFileName = Get-NetBoxRotationFileName
 
         Publish-NetBoxExport `
             -StagingPath $StagingPath `
@@ -809,41 +809,41 @@ Function Invoke-NetBoxExport {
             -Force `
             -ErrorAction SilentlyContinue
 
-        $GesamtObjektanzahl = (
-            $ObjektAnzahlen.Values | Measure-Object -Sum
+        $totalObjectCount = (
+            $objectCounts.Values | Measure-Object -Sum
         ).Sum
 
         Write-ServiceLog `
             -Message (
-                "NetBox-Gesamtexport abgeschlossen (Status: " + $Gesamtstatus +
-                "). Archivdatei: " +
-                (Join-Path $global:LocalSyncPath $ZielDateiname)
+                "Full NetBox export finished (status: " + $overallStatus +
+                "). Archive: " +
+                (Join-Path $global:LocalSyncPath $targetFileName)
             )
 
-        If ($Gesamtstatus -eq "complete") {
-            $StatusText = " - ERFOLGREICH ("
+        If ($overallStatus -eq "complete") {
+            $statusText = " - SUCCESS ("
         }
         Else {
-            $StatusText = (
-                " - TEILWEISE (" + $FehlerhafteEndpunkte.Count +
-                " Endpunkte fehlgeschlagen, "
+            $statusText = (
+                " - PARTIAL (" + $failedEndpoints.Count +
+                " endpoints failed, "
             )
         }
 
-        Update-NetBoxStatusDatei `
-            -Wochentag (Get-NetBoxWochentag) `
+        Update-NetBoxStatusFile `
+            -Wochentag (Get-NetBoxWeekday) `
             -Statuszeile (
                 (Get-Date -Format "yyyy.MM.dd HH:mm:ss") +
-                $StatusText +
-                $GesamtObjektanzahl +
-                " Objekte, Datei: " + $ZielDateiname + ")"
+                $statusText +
+                $totalObjectCount +
+                " objects, file: " + $targetFileName + ")"
             )
 
         # Monitoring is only pinged on a fully successful run. A partial export
         # must show up as a missed heartbeat, otherwise a slowly rotting export
         # stays green in the dashboard.
         If ((-not [string]::IsNullOrWhiteSpace($PushURL)) -and
-            ($Gesamtstatus -eq "complete")
+            ($overallStatus -eq "complete")
         ) {
             Try {
                 Invoke-WebRequest `
@@ -858,37 +858,37 @@ Function Invoke-NetBoxExport {
                 Write-ServiceLog `
                     -Level "WARN" `
                     -Message (
-                        "Export erfolgreich, Monitoring-Push fehlgeschlagen: " +
+                        "Export succeeded, monitoring push failed: " +
                         $_.Exception.Message
                     )
             }
         }
 
-        If ($Gesamtstatus -ne "complete") {
+        If ($overallStatus -ne "complete") {
             Throw (
-                "Export unvollstaendig: " + $FehlerhafteEndpunkte.Count +
-                " von " + $Endpunkte.Count + " Endpunkten fehlgeschlagen (" +
-                (($FehlerhafteEndpunkte.Keys) -join ", ") + ")."
+                "Export incomplete: " + $failedEndpoints.Count +
+                " of " + $endpoints.Count + " endpoints failed (" +
+                (($failedEndpoints.Keys) -join ", ") + ")."
             )
         }
     }
     Catch {
         Write-ServiceLog `
             -Level "ERROR" `
-            -Message ("NetBox-Gesamtexport fehlgeschlagen: " + $_.Exception.Message)
+            -Message ("Full NetBox export failed: " + $_.Exception.Message)
 
         Try {
-            Update-NetBoxStatusDatei `
-                -Wochentag (Get-NetBoxWochentag) `
+            Update-NetBoxStatusFile `
+                -Wochentag (Get-NetBoxWeekday) `
                 -Statuszeile (
                     (Get-Date -Format "yyyy.MM.dd HH:mm:ss") +
-                    " - FEHLER: " + $_.Exception.Message
+                    " - ERROR: " + $_.Exception.Message
                 )
         }
         Catch {
             Write-ServiceLog `
                 -Level "WARN" `
-                -Message ("status.txt konnte nicht aktualisiert werden: " + $_.Exception.Message)
+                -Message ("status.txt could not be updated: " + $_.Exception.Message)
         }
 
         If (Test-Path -Path $StagingPath) {
@@ -904,13 +904,13 @@ Function Invoke-NetBoxExport {
 }
 
 # ---------------------------------------------------------------------------
-# Start
+# Entry point
 # ---------------------------------------------------------------------------
 
-New-Item -ItemType Directory -Path $global:SkriptPath    -Force | Out-Null
+New-Item -ItemType Directory -Path $global:ScriptPath    -Force | Out-Null
 New-Item -ItemType Directory -Path $global:LocalSyncPath -Force | Out-Null
 
-# TLS 1.2 fuer Windows PowerShell 5.1 aktivieren
+# Enable TLS 1.2 for Windows PowerShell 5.1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 Invoke-NetBoxExport

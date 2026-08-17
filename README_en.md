@@ -1,6 +1,6 @@
 # NetBox Local
 
-*German version: [README_de.md](README_de.md)*
+*German version: [README_de.md](README_de.md)* · *Quick start: [QUICKSTART.md](QUICKSTART.md)*
 
 A complete NetBox instance that runs offline on a Windows emergency notebook. It
 holds a copy of your production NetBox data and exists so that people can still
@@ -104,8 +104,7 @@ A console window opens and shows the progress:
   Password : ………
 ```
 
-The browser opens by itself. **The window may be closed** — NetBox Local keeps
-running. The first start takes longer because the database is created; after
+The browser opens by itself. The window stays open as a control console (see *Stopping*). The first start takes longer because the database is created; after
 that, expect two to four minutes.
 
 ### Logging in
@@ -125,6 +124,10 @@ PostgreSQL is shut down in an orderly fashion (`PostgreSQL shut down cleanly`).
 That is not cosmetic: a database service that was killed has to restore its
 consistency on the next start, which delays exactly the moment when speed
 matters.
+
+The start window stays open as a small console with four commands: `/stop`
+(shut down), `/open` (open the interface), `/status` (which services are
+running) and `/exit` (close the window, leave NetBox Local running).
 
 If the window is simply closed, PostgreSQL and Garnet keep running. That is
 harmless; the next start detects them and reuses them.
@@ -155,7 +158,7 @@ harmless; the next start detects them and reuses them.
 Use the installer package:
 
 ```
-dist\installer\NetBox Local 1.0.0.msi
+dist\installer\NetBox Local 1.1.0.msi
 ```
 
 A double-click is enough. **No administrator rights are required** — it installs
@@ -165,13 +168,13 @@ Start menu entries itself.
 For unattended rollout through a software management system:
 
 ```powershell
-msiexec /i "NetBox Local 1.0.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.1.0.msi" /qn /l*v install.log
 ```
 
 Uninstall through *Settings → Apps*, or:
 
 ```powershell
-msiexec /x "NetBox Local 1.0.0.msi" /qn
+msiexec /x "NetBox Local 1.1.0.msi" /qn
 ```
 
 The database and credentials under `%LOCALAPPDATA%\NetBoxLocal` survive an
@@ -181,7 +184,7 @@ by hand for a clean slate.
 > The package is currently **not signed**, so Windows SmartScreen warns on first
 > launch. A company code-signing certificate fixes that:
 > ```powershell
-> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.0.0.msi"
+> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.1.0.msi"
 > ```
 
 **Without the installer:** copy the `NetBox Local - Final` directory onto the
@@ -193,7 +196,7 @@ identical, just without an entry in *Apps & features*.
 Open `config\NetBoxLocal.json` and check at least:
 
 ```jsonc
-"webUser": { "username": "admin", "password": "", "readOnly": true },
+"webUser": { "mode": "readonly", "username": "admin", "password": "" },
 "import":  { "syncRoot": "C:\\Sync-Daten\\NetBoxLocal" }
 ```
 
@@ -257,27 +260,39 @@ minutes.
 Everything adjustable lives in **`config\NetBoxLocal.json`**. Changes take
 effect on the next start.
 
-### `webUser` — login account
+### `webUser` — login accounts
 
 ```jsonc
 "webUser": {
+  "mode": "readonly",
   "username": "admin",
   "password": "",
-  "readOnly": true
+  "readOnlyUsername": "viewer",
+  "readOnlyPassword": ""
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `username` | login name for the interface |
-| `password` | Empty = one is generated on first start and stored in `secrets\admin-password.txt`. Set = enforced on every start, which is convenient for a single shared password across notebooks |
-| `readOnly` | `true` = the account only gets read permissions. NetBox then hides every edit control; the interface is otherwise identical |
+| `mode` | `readonly`, `superuser` or `both` — see the table below |
+| `username` | login name of the primary account |
+| `password` | Empty = one is generated on first start and stored in `secretsadmin-password.txt`. Set = enforced on every start |
+| `readOnlyUsername` | second account, only used with `mode: both` |
+| `readOnlyPassword` | its password |
 
-**`readOnly` defaults to `true`.** Without it, someone can change entries during
-an outage that silently vanish on the next start — and while they are visible,
-they may well be mistaken for real data.
+The three modes:
 
-The mode has been verified against a running instance. With `readOnly: true`:
+| `mode` | Effect |
+|---|---|
+| `readonly` | One account with read permissions only. NetBox hides every edit control. **Default**, recommended for emergency notebooks |
+| `superuser` | One account with full access. For running NetBox Local as a standalone local NetBox, without Docker or a VM |
+| `both` | Both accounts side by side |
+
+`readonly` is the default. Without it, someone can change entries during an
+outage that silently vanish on the next start — and while they are visible, they
+may well be mistaken for real data.
+
+The mode has been verified against a running instance. With `readonly`:
 
 | Action | Result |
 |---|---|
@@ -289,9 +304,10 @@ The mode has been verified against a running instance. With `readOnly: true`:
 
 It is implemented as a non-superuser account belonging to a group that holds
 `view` permission on every object type. A superuser would bypass all permission
-checks — which is why hiding the buttons alone is not enough.
+checks — hiding the buttons alone is not enough.
 
-To switch, change the value and restart; the account is adjusted on every start.
+To switch, change the value and restart; the accounts are reapplied on every
+start.
 
 ### `import` — data source
 

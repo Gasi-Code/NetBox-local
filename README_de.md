@@ -1,6 +1,6 @@
 # NetBox Local
 
-*English version: [README_en.md](README_en.md)*
+*English version: [README_en.md](README_en.md)* · *Schnelleinstieg: [QUICKSTART.md](QUICKSTART.md)*
 
 Eine vollwertige NetBox-Instanz, die offline auf einem Windows-Notfallnotebook
 läuft. Sie enthält eine Kopie eures produktiven NetBox-Bestandes und ist dafür
@@ -105,8 +105,7 @@ Es öffnet sich ein Konsolenfenster, das den Fortschritt zeigt:
   Password : ………
 ```
 
-Der Browser öffnet sich automatisch. **Das Fenster darf geschlossen werden** —
-NetBox Local läuft weiter. Der erste Start dauert länger (Datenbank wird
+Der Browser öffnet sich automatisch. Das Fenster bleibt als Bedienkonsole offen (siehe *Beenden*). Der erste Start dauert länger (Datenbank wird
 angelegt), danach etwa zwei bis vier Minuten.
 
 ### Anmelden
@@ -127,8 +126,12 @@ cleanly`). Das ist kein Schönheitsdetail: Ein hart beendeter Datenbankdienst
 muss beim nächsten Start erst seine Konsistenz wiederherstellen, was den Start
 spürbar verzögert — ausgerechnet in dem Moment, in dem es schnell gehen soll.
 
-Wird das Fenster nur weggeklickt, laufen PostgreSQL und Garnet weiter. Das ist
-unkritisch; der nächste Start erkennt das und nutzt sie weiter.
+Das Startfenster bleibt als kleine Konsole offen und kennt vier Befehle:
+`/stop` (herunterfahren), `/open` (Oberfläche öffnen), `/status` (laufende
+Dienste) und `/exit` (Fenster schliessen, NetBox Local weiterlaufen lassen).
+
+Wird das Fenster einfach weggeklickt, laufen PostgreSQL und Garnet weiter. Das
+ist unkritisch; der nächste Start erkennt das und nutzt sie weiter.
 
 ### Wichtig zu wissen
 
@@ -157,7 +160,7 @@ unkritisch; der nächste Start erkennt das und nutzt sie weiter.
 Empfohlen ist das fertige Installationspaket:
 
 ```
-dist\installer\NetBox Local 1.0.0.msi
+dist\installer\NetBox Local 1.1.0.msi
 ```
 
 Doppelklick genügt. **Es sind keine Adminrechte nötig** — installiert wird nach
@@ -167,13 +170,13 @@ legt der Installer selbst an.
 Für die unbeaufsichtigte Verteilung über eine Softwareverwaltung:
 
 ```powershell
-msiexec /i "NetBox Local 1.0.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.1.0.msi" /qn /l*v install.log
 ```
 
 Deinstallieren über *Einstellungen → Apps* oder:
 
 ```powershell
-msiexec /x "NetBox Local 1.0.0.msi" /qn
+msiexec /x "NetBox Local 1.1.0.msi" /qn
 ```
 
 Dabei bleiben Datenbank und Zugangsdaten unter `%LOCALAPPDATA%\NetBoxLocal`
@@ -184,7 +187,7 @@ aufräumen will, löscht dieses Verzeichnis von Hand.
 > beim ersten Start. Mit einem Firmen-Codesigning-Zertifikat lässt sich das
 > beheben:
 > ```powershell
-> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.0.0.msi"
+> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.1.0.msi"
 > ```
 
 **Alternative ohne Installer:** Das Verzeichnis `NetBox Local - Final` einfach
@@ -197,7 +200,7 @@ Features*.
 `config\NetBoxLocal.json` öffnen und mindestens prüfen:
 
 ```jsonc
-"webUser": { "username": "admin", "password": "", "readOnly": true },
+"webUser": { "mode": "readonly", "username": "admin", "password": "" },
 "import":  { "syncRoot": "C:\\Sync-Daten\\NetBoxLocal" }
 ```
 
@@ -265,39 +268,50 @@ beim nächsten Start.
 
 ```jsonc
 "webUser": {
+  "mode": "readonly",
   "username": "admin",
   "password": "",
-  "readOnly": true
+  "readOnlyUsername": "viewer",
+  "readOnlyPassword": ""
 }
 ```
 
 | Feld | Bedeutung |
 |---|---|
-| `username` | Anmeldename an der Oberfläche |
-| `password` | Leer = beim ersten Start wird eines erzeugt und in `secrets\admin-password.txt` abgelegt. Eingetragen = wird bei jedem Start durchgesetzt, praktisch für ein einheitliches Passwort auf allen Notebooks |
-| `readOnly` | `true` = der Benutzer erhält nur Leserechte. NetBox blendet dann sämtliche Bearbeiten-Schaltflächen aus; die Oberfläche sieht sonst identisch aus |
+| `mode` | `readonly`, `superuser` oder `both` — siehe Tabelle unten |
+| `username` | Anmeldename des Hauptkontos |
+| `password` | Leer = beim ersten Start wird eines erzeugt und in `secretsadmin-password.txt` abgelegt. Eingetragen = wird bei jedem Start durchgesetzt |
+| `readOnlyUsername` | zweites Konto, nur bei `mode: both` |
+| `readOnlyPassword` | dessen Kennwort |
 
-**`readOnly` steht ab Werk auf `true`.** Ohne diese Einstellung kann jemand im
-Störfall Einträge ändern, die beim nächsten Start kommentarlos verschwinden —
-und solange sie sichtbar sind, hält man sie womöglich für echt.
+Die drei Modi:
 
-Der Modus wurde gegen die laufende Instanz geprüft. Mit `readOnly: true` gilt:
+| `mode` | Wirkung |
+|---|---|
+| `readonly` | Ein Konto mit reinen Leserechten. NetBox blendet alle Bearbeiten-Schaltflächen aus. **Vorgabe**, empfohlen für Notfallnotebooks |
+| `superuser` | Ein Konto mit Vollzugriff. Für NetBox Local als eigenständige lokale NetBox, ohne Docker oder VM |
+| `both` | Beide Konten nebeneinander |
+
+`readonly` ist die Vorgabe. Ohne sie kann jemand im Störfall Einträge ändern,
+die beim nächsten Start kommentarlos verschwinden — und solange sie sichtbar
+sind, hält man sie womöglich für echt.
+
+Der Modus wurde gegen die laufende Instanz geprüft. Mit `readonly` gilt:
 
 | Zugriff | Ergebnis |
 |---|---|
 | Seiten und Listen lesen | erlaubt |
-| Bearbeiten- und Löschen-Schaltflächen | erscheinen nicht in der Oberfläche |
+| Bearbeiten- und Löschen-Schaltflächen | erscheinen nicht |
 | Bearbeiten-Formular direkt aufrufen | 403 |
 | Änderung oder Löschung absenden | 403 |
 | Schreiben über die REST-API | 403 |
 
-Umgesetzt ist das über einen Benutzer ohne Superuser-Recht, der einer Gruppe
-mit ausschließlich `view`-Berechtigung auf alle Objekttypen angehört. Ein
-Superuser würde jede Rechteprüfung umgehen — deshalb genügt es nicht, nur die
-Schaltflächen auszublenden.
+Umgesetzt über ein Konto ohne Superuser-Recht in einer Gruppe mit
+ausschließlich `view`-Berechtigung auf alle Objekttypen. Ein Superuser würde
+jede Rechteprüfung umgehen — Schaltflächen auszublenden genügt nicht.
 
-Zum Umschalten den Wert ändern und neu starten; der Zugang wird bei jedem Start
-entsprechend angepasst.
+Zum Umschalten den Wert ändern und neu starten; die Konten werden bei jedem
+Start entsprechend gesetzt.
 
 ### `import` — Datenquelle
 
