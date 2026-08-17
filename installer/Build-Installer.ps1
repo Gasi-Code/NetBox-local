@@ -164,7 +164,6 @@ $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     -ext WixUtilExtension `
     -dSourceDir="$SourceDir" `
     -cultures:en-us `
-    -dWixUILicenseRtf="$(Join-Path $InstallerDir 'License.rtf')" `
     -sw1076 `
     -sice:ICE64 -sice:ICE38 -sice:ICE91 `
     -out $msi `

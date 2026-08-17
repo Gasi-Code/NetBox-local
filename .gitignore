@@ -41,3 +41,6 @@ secrets/
 *.p12
 *.key
 .env
+
+# The built installer: 167 MB. Attach it to a GitHub release instead.
+*.msi

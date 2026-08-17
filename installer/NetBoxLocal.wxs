@@ -146,6 +146,12 @@
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
+    <!-- Without this the licence page shows WiX's Lorem ipsum placeholder.
+         It has to be a WixVariable: the -d switch on candle sets a preprocessor
+         variable, which the UI never looks at. The path resolves through
+         SourceDir so the build works from any checkout location. -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\installer\License.rtf" />
+
     <UI Id="NetBoxLocalUI">
       <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="AccessModeDlg" Order="10">
         <![CDATA[WIXUI_INSTALLDIR_VALID = "1"]]>
