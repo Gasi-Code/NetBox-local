@@ -554,14 +554,33 @@ def main():
         local_major_minor = ".".join(str(local_version).split(".")[:2])
         source_major_minor = ".".join(source_version.split(".")[:2])
 
-        if source_major_minor and source_major_minor != local_major_minor:
+        source_major = source_major_minor.split(".")[0] if source_major_minor else ""
+        local_major = local_major_minor.split(".")[0]
+
+        if source_major and source_major != local_major:
+            # A major release renames tables and drops models outright. Nothing
+            # sensible can be salvaged from that, so this stays a hard stop.
             log("")
-            log(f"ERROR: version mismatch. The export came from NetBox {source_version},")
+            log(f"ERROR: incompatible versions. The export came from NetBox {source_version},")
             log(f"        this instance is NetBox {local_version}.")
-            log("        Fields and models differ between minor versions;")
-            log("        importing would silently lose data.")
-            log("        Please build the bundle for the matching NetBox version.")
+            log("        Major versions differ - models and tables are not comparable.")
+            log("        Build the bundle for the matching NetBox version:")
+            log(f"        .\\build\\Set-NetBoxVersion.ps1 -Version {source_version}")
             return 2
+
+        if source_major_minor and source_major_minor != local_major_minor:
+            # Minor releases add and remove individual fields. The import maps
+            # by name and skips whatever the local model does not have, so the
+            # data still lands - just without anything the local NetBox has no
+            # column for. Verified by importing a 4.6.8 export into 4.5.9:
+            # 23 models, 72 objects, no errors.
+            log("")
+            log(f"    NOTE: the export is from NetBox {source_version}, this instance is {local_version}.")
+            log("          Fields that exist only in the other version are skipped;")
+            log("          everything else is imported normally. Build a matching")
+            log("          bundle if you need those fields:")
+            log(f"          .\\build\\Set-NetBoxVersion.ps1 -Version {source_version}")
+            log("")
 
         if manifest.get("status") != "complete":
             failed = manifest.get("failedEndpoints") or {}

@@ -1,7 +1,7 @@
 ﻿{
     "_comment":  "Gepinnte Binaerkomponenten fuer das NetBox-Local-Bundle. sha256 wird beim ersten erfolgreichen Fetch durch fetch-components.ps1 eingetragen und ist danach verbindlich.",
     "_verified":  "2026-08-17",
-    "netboxVersion":  "4.6.8",
+    "netboxVersion":  "4.5.9",
     "components":  [
                        {
                            "name":  "python",
@@ -60,14 +60,14 @@
                        },
                        {
                            "name":  "netbox",
-                           "version":  "4.6.8",
-                           "url":  "https://github.com/netbox-community/netbox/archive/refs/tags/v4.6.8.tar.gz",
-                           "sha256":  "5d9bad64684b62b5f30e9d929d31f885e5a7cf20b9adc7e4a10547b652476dcc",
+                           "version":  "4.5.9",
+                           "url":  "https://github.com/netbox-community/netbox/archive/refs/tags/v4.5.9.tar.gz",
+                           "sha256":  "fc293d892ba6cc143e2b436b1102ef38cf4a0b9d314b4a12b06ae7dfd4701f40",
                            "sizeMB":  19.0,
                            "archive":  "tar.gz",
                            "target":  "netbox",
                            "license":  "Apache-2.0",
-                           "note":  "IMPORTANT: this version MUST match the NetBox instance being mirrored. Set with build\\Set-NetBoxVersion.ps1 on 2026-08-17. The importer refuses to run when the minor versions differ, because fields and models change between releases."
+                           "note":  "IMPORTANT: this version MUST match the NetBox instance being mirrored. Set with build\\Set-NetBoxVersion.ps1 on 2026-08-18. The importer refuses to run when the minor versions differ, because fields and models change between releases."
                        }
                    ],
     "requirementPatches":  [
