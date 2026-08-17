@@ -85,6 +85,14 @@ if (Test-Path $config) {
     Remove-Item $config -Force
 }
 
+# A previously built MSI sitting in the payload directory would be packed into
+# the new one, doubling its size for no reason.
+$staleInstallers = Get-ChildItem -Path $SourceDir -Filter '*.msi' -File -ErrorAction SilentlyContinue
+if ($staleInstallers) {
+    Write-Warn "Removing $($staleInstallers.Count) previously built installer(s) from the payload"
+    foreach ($m in $staleInstallers) { Remove-Item $m.FullName -Force }
+}
+
 $leftovers = Get-ChildItem -Path $SourceDir -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue
 if ($leftovers) {
     Write-Warn "Removing $($leftovers.Count) __pycache__ directories from the payload"
