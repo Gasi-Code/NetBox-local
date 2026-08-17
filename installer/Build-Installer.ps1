@@ -187,8 +187,30 @@ $msiMB = [math]::Round((Get-Item $msi).Length / 1MB, 1)
 
 Write-Host ''
 Write-Ok "MSI created in $([math]::Round($stopwatch.Elapsed.TotalMinutes,1)) minutes"
-Write-Host "    File : $msi"
-Write-Host "    Size : $msiMB MB (payload was $payloadMB MB)"
+Write-Host "    Built : $msi"
+Write-Host "    Size  : $msiMB MB (payload was $payloadMB MB)"
+
+# Put the finished installer next to the payload, which is where anyone looks
+# for it. The build clears stale .msi files out of the payload beforehand, so
+# this copy cannot end up inside the next package.
+try {
+    Copy-Item -Path $msi -Destination $SourceDir -Force
+    Write-Ok "copied to $SourceDir"
+}
+catch {
+    Write-Warn "Could not copy the installer to ${SourceDir}: $($_.Exception.Message)"
+}
+
+# wixpdb files are linker debug symbols, roughly 90 MB each, and serve no
+# purpose once the package exists.
+Get-ChildItem -Path $OutputDir -Filter '*.wixpdb' -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# Only the current package stays behind; older ones invite installing the wrong
+# version by accident.
+Get-ChildItem -Path $OutputDir -Filter '*.msi' -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $msi } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host '  Install silently with:' -ForegroundColor Cyan
 Write-Host "    msiexec /i `"$msi`" /qn /l*v install.log"
