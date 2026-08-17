@@ -28,7 +28,7 @@ finished in two minutes.
 
 ## Step 1 — Run the installer
 
-Double-click **`NetBox Local 1.1.0.msi`**.
+Double-click **`NetBox Local 1.5.0.msi`**.
 
 - No administrator rights are required.
 - It installs into `%LOCALAPPDATA%\Programs\NetBox Local`.
@@ -82,6 +82,34 @@ Doing A? Fill in:
 > *Admin → API Tokens*, clear *Write enabled*. A notebook can be lost or stolen;
 > a write-capable token inside one is full access to your production NetBox.
 
+Below that, **when should the data be collected?**
+
+| Option | Runs |
+|---|---|
+| **Every day** *(default)* | daily at the chosen time |
+| **Monday to Friday** | working days only |
+| **Mondays only** | once a week |
+
+**At time** takes a 24-hour value such as `17:00`.
+
+The installer registers this as a Windows scheduled task named
+**NetBox Local export**. That task runs the export **on its own** — NetBox Local
+never has to be started for the data to stay current. This matters more than it
+looks: during an outage the production NetBox is unreachable, so the data has to
+have been collected *before* it. If the notebook was switched off at the
+scheduled time, the run is caught up the next time it is switched on.
+
+With several emergency notebooks, stagger the times (17:00, 17:15, 17:30 …) so
+they do not all pull a full export at once.
+
+The schedule can be changed later without reinstalling:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Status                     # what is registered now
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
+```
+
 Then *Install*. It takes a few minutes — 30,000 files are being written.
 
 ---
@@ -130,20 +158,29 @@ port is already in use.
 Skip this entirely for case **B**.
 
 If you filled in the server address during installation, the export script is
-already configured. It still needs to be scheduled:
+already configured **and already scheduled** — the installer registered the task
+with the days and time you picked on page 5. Nothing further is required.
+
+Check what was registered:
 
 ```powershell
 cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
-.\Register-SyncTask.ps1 -Uhrzeit "17:00"
+.\Register-SyncTask.ps1 -Status
+```
+
+Change it at any time:
+
+```powershell
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
 ```
 
 With several notebooks, stagger the times — 17:00, 17:15, 17:30 — so they do not
 all hit the server at once.
 
-Test it once:
+Test it once, without waiting for the schedule:
 
 ```powershell
-Start-ScheduledTask -TaskName "NetBox-Gesamtexport"
+Start-ScheduledTask -TaskName "NetBox Local export"
 ```
 
 Then look in your data folder. A weekday archive such as `Monday.zip` must
@@ -283,7 +320,7 @@ in zwei Minuten fertig.
 
 ## Schritt 1 — Installer ausführen
 
-Doppelklick auf **`NetBox Local 1.1.0.msi`**.
+Doppelklick auf **`NetBox Local 1.5.0.msi`**.
 
 - Es sind **keine Adminrechte** nötig.
 - Installiert wird nach `%LOCALAPPDATA%\Programs\NetBox Local`.
@@ -338,6 +375,34 @@ Fall A? Eintragen:
 > kann verloren gehen oder gestohlen werden; ein schreibfähiger Token darin ist
 > ein Vollzugriff auf eure produktive NetBox.
 
+Darunter: **wann sollen die Daten geholt werden?**
+
+| Option | Läuft |
+|---|---|
+| **Every day** *(Vorgabe)* | täglich zur gewählten Uhrzeit |
+| **Monday to Friday** | nur an Werktagen |
+| **Mondays only** | einmal pro Woche |
+
+**At time** erwartet eine Uhrzeit im 24-Stunden-Format, etwa `17:00`.
+
+Der Installer legt das als Windows-Aufgabe **NetBox Local export** an. Diese
+Aufgabe führt den Export **eigenständig** aus — NetBox Local muss dafür nie
+gestartet sein. Das ist wichtiger, als es aussieht: Im Störungsfall ist die
+produktive NetBox nicht erreichbar, die Daten müssen also *vorher* geholt worden
+sein. War das Notebook zur geplanten Zeit ausgeschaltet, wird der Lauf beim
+nächsten Einschalten nachgeholt.
+
+Bei mehreren Notfallnotebooks die Zeiten staffeln (17:00, 17:15, 17:30 …), damit
+sie nicht alle gleichzeitig einen Vollexport ziehen.
+
+Der Zeitplan lässt sich später ohne Neuinstallation ändern:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Status                     # was ist gerade eingestellt
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
+```
+
 Dann *Installieren*. Das dauert einige Minuten — es werden 30.000 Dateien
 geschrieben.
 
@@ -387,20 +452,30 @@ dann einen belegten Port.
 Für Fall **B** komplett überspringen.
 
 Wenn du bei der Installation die Serveradresse eingetragen hast, ist das
-Exportskript bereits konfiguriert. Es muss nur noch eingeplant werden:
+Exportskript bereits konfiguriert **und bereits eingeplant** — der Installer hat
+die Aufgabe mit den auf Seite 5 gewählten Tagen und Zeiten angelegt. Es ist
+nichts weiter zu tun.
+
+Nachsehen, was eingetragen wurde:
 
 ```powershell
 cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
-.\Register-SyncTask.ps1 -Uhrzeit "17:00"
+.\Register-SyncTask.ps1 -Status
+```
+
+Jederzeit ändern:
+
+```powershell
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
 ```
 
 Bei mehreren Notebooks die Zeiten staffeln — 17:00, 17:15, 17:30 — damit sie den
 Server nicht gleichzeitig treffen.
 
-Einmal testen:
+Einmal testen, ohne auf den Zeitplan zu warten:
 
 ```powershell
-Start-ScheduledTask -TaskName "NetBox-Gesamtexport"
+Start-ScheduledTask -TaskName "NetBox Local export"
 ```
 
 Dann im Datenordner nachsehen. Dort muss ein Wochentags-Archiv wie `Monday.zip`

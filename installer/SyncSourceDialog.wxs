@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Second custom dialog: where the exported data comes from.
+  Second custom dialog: where the exported data comes from, and when it is
+  collected.
 
   Every field here is optional. NetBox Local works perfectly well as a
   standalone local NetBox that is filled by hand, in which case the whole API
-  side simply stays switched off. The fields only matter when there is a
-  self-hosted NetBox to mirror.
+  side stays switched off.
+
+  The schedule matters more than it looks. The export is what keeps the local
+  copy current, and it has to run while the production NetBox is still
+  reachable - during an outage it is far too late. It runs as a Windows
+  scheduled task, entirely independent of NetBox Local: the application never
+  has to be started for the data to stay fresh.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
@@ -14,7 +20,9 @@
     <Property Id="NBSERVER" Secure="yes" />
     <Property Id="NBAPIKEY" Hidden="yes" />
     <Property Id="SCRIPTPATH" Value="C:\Sync-Skripte\NetBoxLocal" />
-    <Property Id="AUTOIMPORT" Value="1" />
+
+    <Property Id="SYNCTIME" Value="17:00" />
+    <Property Id="SYNCDAYS" Value="daily" />
 
     <UI>
       <Dialog Id="SyncSourceDlg" Width="370" Height="270" Title="[ProductName] Setup">
@@ -29,32 +37,40 @@
         <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15" Transparent="yes"
                  NoPrefix="yes" Text="Only needed to mirror an existing NetBox. Leave empty to use it standalone." />
 
-        <Control Id="Intro" Type="Text" X="20" Y="52" Width="335" Height="24"
-                 Text="Skip this page if you have no self-hosted NetBox. These settings can also be added later in config\NetBoxLocal.json." />
+        <Control Id="ServerLabel" Type="Text" X="20" Y="52" Width="200" Height="10"
+                 Text="NetBox &amp;server address:" />
+        <Control Id="ServerEdit" Type="Edit" X="20" Y="64" Width="331" Height="17" Property="NBSERVER" />
 
-        <Control Id="SyncLabel" Type="Text" X="20" Y="82" Width="200" Height="10"
-                 Text="&amp;Exported data folder:" />
-        <Control Id="SyncEdit" Type="PathEdit" X="20" Y="94" Width="270" Height="17" Property="SYNCROOT" />
-        <Control Id="SyncBrowse" Type="PushButton" X="295" Y="94" Width="56" Height="17"
+        <Control Id="KeyLabel" Type="Text" X="20" Y="86" Width="230" Height="10"
+                 Text="API &amp;token (read permissions only):" />
+        <Control Id="KeyEdit" Type="Edit" X="20" Y="98" Width="331" Height="17"
+                 Property="NBAPIKEY" Password="yes" />
+
+        <Control Id="SyncLabel" Type="Text" X="20" Y="120" Width="230" Height="10"
+                 Text="&amp;Folder for the exported files:" />
+        <Control Id="SyncEdit" Type="PathEdit" X="20" Y="132" Width="270" Height="17" Property="SYNCROOT" />
+        <Control Id="SyncBrowse" Type="PushButton" X="295" Y="132" Width="56" Height="17"
                  Text="B&amp;rowse...">
           <Publish Property="_BrowseProperty" Value="SYNCROOT" Order="1">1</Publish>
           <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
         </Control>
-        <Control Id="SyncHint" Type="Text" X="20" Y="113" Width="335" Height="10"
-                 Text="Where the export writes Monday.zip ... Sunday.zip." />
 
-        <Control Id="ServerLabel" Type="Text" X="20" Y="131" Width="200" Height="10"
-                 Text="NetBox &amp;server address:" />
-        <Control Id="ServerEdit" Type="Edit" X="20" Y="143" Width="331" Height="17" Property="NBSERVER" />
-        <Control Id="ServerHint" Type="Text" X="20" Y="162" Width="335" Height="10"
-                 Text="For example https://netbox.example.com/ - leave empty to skip the export." />
+        <Control Id="SchedLabel" Type="Text" X="20" Y="158" Width="335" Height="10"
+                 Text="{\WixUI_Font_Title}When should the data be collected?" />
 
-        <Control Id="KeyLabel" Type="Text" X="20" Y="180" Width="200" Height="10"
-                 Text="API &amp;token (read permissions only):" />
-        <Control Id="KeyEdit" Type="Edit" X="20" Y="192" Width="331" Height="17"
-                 Property="NBAPIKEY" Password="yes" />
-        <Control Id="KeyHint" Type="Text" X="20" Y="211" Width="335" Height="18"
-                 Text="Must not have write permissions. A lost notebook would otherwise grant full access to the production NetBox." />
+        <Control Id="DaysGroup" Type="RadioButtonGroup" X="25" Y="173" Width="180" Height="52"
+                 Property="SYNCDAYS">
+          <RadioButtonGroup Property="SYNCDAYS">
+            <RadioButton Value="daily"    X="0" Y="0"  Width="180" Height="16" Text="Every day" />
+            <RadioButton Value="weekdays" X="0" Y="17" Width="180" Height="16" Text="Monday to Friday" />
+            <RadioButton Value="weekly"   X="0" Y="34" Width="180" Height="16" Text="Mondays only" />
+          </RadioButtonGroup>
+        </Control>
+
+        <Control Id="TimeLabel" Type="Text" X="215" Y="175" Width="55" Height="12" Text="At t&amp;ime:" />
+        <Control Id="TimeEdit" Type="Edit" X="270" Y="173" Width="50" Height="16" Property="SYNCTIME" />
+        <Control Id="TimeHint" Type="Text" X="215" Y="194" Width="140" Height="32"
+                 Text="24-hour clock, e.g. 17:00. A missed run is caught up when the machine is next switched on." />
 
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
                  Text="!(loc.WixUIBack)" />

@@ -45,6 +45,10 @@ param(
     [string]$ApiKey = '',
     [string]$ScriptPath = '',
 
+    # Schedule for the export task. daily | weekdays | weekly, and HH:mm.
+    [string]$SyncDays = 'daily',
+    [string]$SyncTime = '17:00',
+
     [string]$ConfigPath,
     [string]$ExportScriptPath
 )
@@ -79,6 +83,12 @@ $SyncRoot         = Get-InstallerValue $SyncRoot
 $NetBoxServer     = Get-InstallerValue $NetBoxServer
 $ApiKey           = Get-InstallerValue $ApiKey
 $ScriptPath       = Get-InstallerValue $ScriptPath
+$SyncDays         = Get-InstallerValue $SyncDays
+$SyncTime         = Get-InstallerValue $SyncTime
+
+if ([string]::IsNullOrWhiteSpace($SyncDays)) { $SyncDays = 'daily' }
+if ([string]::IsNullOrWhiteSpace($SyncTime)) { $SyncTime = '17:00' }
+$SyncDays = $SyncDays.ToLowerInvariant()
 
 if ([string]::IsNullOrWhiteSpace($Mode)) { $Mode = 'readonly' }
 if ([string]::IsNullOrWhiteSpace($Username)) { $Username = 'admin' }
@@ -122,11 +132,17 @@ if (-not [string]::IsNullOrWhiteSpace($SyncRoot)) {
     $config.import.syncRoot = $SyncRoot
 }
 
-# Without a server address there is nothing to mirror, so the automatic import
-# would only produce a warning on every start. Standalone use is a first-class
-# case here, not a misconfiguration.
-if ([string]::IsNullOrWhiteSpace($NetBoxServer)) {
+# The import stays on whenever there is somewhere to import from. A server is
+# not the only source: archives are just as often carried over on a stick or
+# dropped on a share, and switching the import off because no server was named
+# would leave those notebooks quietly ignoring the folder they were given.
+# With neither a server nor a folder there is nothing to mirror at all, and
+# standalone use is a first-class case here, not a misconfiguration.
+if ([string]::IsNullOrWhiteSpace($NetBoxServer) -and [string]::IsNullOrWhiteSpace($SyncRoot)) {
     $config.import.autoImportOnStart = $false
+}
+else {
+    $config.import.autoImportOnStart = $true
 }
 
 $config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPath -Encoding utf8
@@ -145,8 +161,15 @@ if (-not $ExportScriptPath) {
 }
 
 if ([string]::IsNullOrWhiteSpace($NetBoxServer)) {
-    Write-Host 'No NetBox server given; the API export stays switched off.'
-    Write-Host 'NetBox Local runs standalone - fill it with data through its own interface.'
+    Write-Host 'No NetBox server given; the automatic export stays switched off.'
+
+    if ([string]::IsNullOrWhiteSpace($SyncRoot)) {
+        Write-Host 'NetBox Local runs standalone - fill it with data through its own interface.'
+    }
+    else {
+        Write-Host "Exports placed in $SyncRoot are still imported on every start,"
+        Write-Host 'so archives copied there by hand or from a share work as usual.'
+    }
     return
 }
 
@@ -210,9 +233,28 @@ try {
         -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $ExportScriptPath + '"') `
         -WorkingDirectory (Split-Path $ExportScriptPath -Parent)
 
-    # 17:00 is late enough that the day's changes are in, early enough that
-    # someone is still around if it fails.
-    $trigger = New-ScheduledTaskTrigger -Daily -At '17:00'
+    # The schedule is what keeps the local copy current, and it has to run while
+    # the production NetBox is still reachable. During an outage it is too late.
+    if ($SyncTime -notmatch '^([01]\d|2[0-3]):[0-5]\d$') {
+        Write-Warning "'$SyncTime' is not a valid time (HH:mm). Falling back to 17:00."
+        $SyncTime = '17:00'
+    }
+
+    switch ($SyncDays) {
+        'weekdays' {
+            $trigger = New-ScheduledTaskTrigger -Weekly -At $SyncTime `
+                -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday
+            $scheduleText = "Monday to Friday at $SyncTime"
+        }
+        'weekly' {
+            $trigger = New-ScheduledTaskTrigger -Weekly -At $SyncTime -DaysOfWeek Monday
+            $scheduleText = "Mondays at $SyncTime"
+        }
+        default {
+            $trigger = New-ScheduledTaskTrigger -Daily -At $SyncTime
+            $scheduleText = "daily at $SyncTime"
+        }
+    }
 
     # A notebook is rarely awake at exactly 17:00. Without a catch-up rule the
     # export is skipped on every day the machine happened to be off, which is
@@ -226,16 +268,48 @@ try {
         -RestartCount 3 `
         -RestartInterval (New-TimeSpan -Minutes 15)
 
-    $principal = New-ScheduledTaskPrincipal `
-        -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
-        -LogonType Interactive `
-        -RunLevel Limited
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
-    Register-ScheduledTask -TaskName $taskName `
-        -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
-        -Force | Out-Null
+    # S4U runs the task whether or not the user is signed in, without storing a
+    # password. It needs the "log on as a batch job" right, which managed
+    # devices do not always grant - so fall back to Interactive rather than
+    # leaving the notebook with no scheduled export at all.
+    $registered = $false
+    foreach ($logonType in @('S4U', 'Interactive')) {
+        try {
+            $principal = New-ScheduledTaskPrincipal `
+                -UserId $currentUser -LogonType $logonType -RunLevel Limited
 
-    Write-Host "Scheduled task '$taskName' registered for 17:00 daily"
+            Register-ScheduledTask -TaskName $taskName `
+                -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+                -Force -ErrorAction Stop | Out-Null
+
+            $registered = $true
+            break
+        }
+        catch { }
+    }
+
+    if (-not $registered) { throw 'Register-ScheduledTask failed for both logon types.' }
+
+    # Reading the task back is the only way to know it really exists and points
+    # at the right script - registration can succeed and still be wrong.
+    # It also decides what to report: a request for S4U can be accepted and then
+    # quietly downgraded, and telling the operator the export runs without a
+    # sign-in when it does not is how a notebook goes stale unnoticed.
+    $check = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+    $actualLogon = [string]$check.Principal.LogonType
+
+    Write-Host "Scheduled task '$taskName' registered: $scheduleText"
+    if ($actualLogon -eq 'S4U' -or $actualLogon -eq 'Password') {
+        Write-Host '  Runs whether or not you are signed in.'
+    }
+    else {
+        Write-Host '  Runs while you are signed in. Missed runs are caught up at the next sign-in.'
+    }
+    Write-Host "  Account   : $($check.Principal.UserId) ($actualLogon)"
+    Write-Host "  Next run  : $($info.NextRunTime)"
 }
 catch {
     Write-Warning "Could not register the scheduled task: $($_.Exception.Message)"

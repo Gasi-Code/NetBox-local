@@ -158,7 +158,7 @@ harmless; the next start detects them and reuses them.
 Use the installer package:
 
 ```
-dist\installer\NetBox Local 1.1.0.msi
+dist\installer\NetBox Local 1.5.0.msi
 ```
 
 A double-click is enough. **No administrator rights are required** — it installs
@@ -168,13 +168,13 @@ Start menu entries itself.
 For unattended rollout through a software management system:
 
 ```powershell
-msiexec /i "NetBox Local 1.1.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.0.msi" /qn /l*v install.log
 ```
 
 Uninstall through *Settings → Apps*, or:
 
 ```powershell
-msiexec /x "NetBox Local 1.1.0.msi" /qn
+msiexec /x "NetBox Local 1.5.0.msi" /qn
 ```
 
 The database and credentials under `%LOCALAPPDATA%\NetBoxLocal` survive an
@@ -184,7 +184,7 @@ by hand for a clean slate.
 > The package is currently **not signed**, so Windows SmartScreen warns on first
 > launch. A company code-signing certificate fixes that:
 > ```powershell
-> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.1.0.msi"
+> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.0.msi"
 > ```
 
 **Without the installer:** copy the `NetBox Local - Final` directory onto the
@@ -216,12 +216,19 @@ $APIKey       = "<token with read permissions only>"
 > lost; a write-capable token inside it would be full access to your production
 > NetBox.
 
-Then register the scheduled task:
+Then register the scheduled task (installing from the `.msi` already does this,
+using the days and time chosen there):
 
 ```powershell
 cd C:\NetBoxLocal\src\export
-.\Register-SyncTask.ps1 -Uhrzeit "17:00"
+.\Register-SyncTask.ps1 -Time "17:00"                # every day
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45" # Mon-Fri
+.\Register-SyncTask.ps1 -Days weekly -Time "23:00"   # Mondays only
 ```
+
+This task runs **on its own** — NetBox Local never has to be started for it.
+That is the whole point: during an outage the production NetBox is unreachable,
+so the data has to have been collected before it.
 
 With several notebooks, stagger the times (17:00, 17:15, 17:30 …) so they do not
 hit the server simultaneously.
@@ -229,7 +236,8 @@ hit the server simultaneously.
 Test it once:
 
 ```powershell
-Start-ScheduledTask -TaskName "NetBox-Gesamtexport"
+Start-ScheduledTask -TaskName "NetBox Local export"
+.\Register-SyncTask.ps1 -Status
 ```
 
 Then check `C:\Sync-Daten\NetBoxLocal` — a weekday archive such as `Monday.zip`
@@ -546,14 +554,69 @@ those endpoints flow through as soon as the permissions are in place.
 
 ### The dataset is too old
 
-Check whether the scheduled task is running:
+Start with what the scheduler reports:
 
 ```powershell
-Get-ScheduledTask -TaskName "NetBox-Gesamtexport" | Get-ScheduledTaskInfo
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Status
 ```
 
-Then look at `status.txt` and the service log in
-`C:\Sync-Skripte\Sync-NetBoxExport`.
+The output shows the schedule, the account, the last run and its result.
+`result 0` means success; anything else does not.
+
+| What you see | What it means |
+|---|---|
+| `No task 'NetBox Local export' is registered` | There is no schedule at all. Create one with `.\Register-SyncTask.ps1`. |
+| `Runs while you are signed in` | The task only runs with a user logged on (see below). |
+| `Last run` is long ago | The machine was off at the scheduled time. The run is caught up at the next start. |
+| `result` is not 0 | The export itself failed — read `status.txt` in the sync folder. |
+
+`status.txt` holds one line per weekday with a timestamp and the outcome:
+
+```
+Monday: 2026.08.17 23:44:11 - ERROR: Export incomplete: 2 of 121 endpoints failed (extras_scripts, plugins_installed-plugins).
+Tuesday: 2026.08.18 01:25:28 - ERROR: No NetBox API token is configured.
+```
+
+### The sync only runs while I am signed in
+
+The installer first tries to register the task as **S4U**, which runs whether or
+not anyone is signed in and stores no password. S4U requires the *Log on as a
+batch job* right, which managed devices do not always grant. Where it is
+missing, the installer falls back to **Interactive**: the task runs only with a
+user logged on, but missed runs are caught up at the next sign-in.
+
+For an emergency notebook somebody signs in to every day, that is enough. If the
+export has to run with nobody logged on, there are two routes:
+
+```powershell
+# service account with a password (never passed on a command line)
+.\Register-SyncTask.ps1 -User "DOMAIN\svc-netboxsync"
+
+# or as SYSTEM - see the warning
+.\Register-SyncTask.ps1 -AsSystem
+```
+
+> **About `-AsSystem`:** the API token sits in clear text inside
+> `Sync-NetBoxExport.ps1`. Running the task as SYSTEM makes that file readable
+> to every local administrator. Only do this with a read-only token.
+
+### Changing the schedule
+
+No reinstall needed:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
+```
+
+`-Days` accepts `daily`, `weekdays` (Mon–Fri) and `weekly` (Mondays only). The
+script replaces the existing entry instead of adding a second one beside it —
+two tasks pulling full exports at the same time is the kind of duplicate nobody
+notices until the server complains.
+
+Remove it with `.\Register-SyncTask.ps1 -Remove`. The local dataset is then no
+longer refreshed automatically.
 
 ### The console window closes immediately
 
@@ -631,7 +694,7 @@ NetBoxLocal\
 ├─ src\
 │  ├─ export\
 │  │  ├─ Sync-NetBoxExport.ps1    API export, daily via Task Scheduler
-│  │  └─ Register-SyncTask.ps1    registers the scheduled task
+│  │  └─ Register-SyncTask.ps1    creates or changes the scheduled task
 │  ├─ import\
 │  │  ├─ Import-NetBoxExport.py   the import itself
 │  │  └─ Import-NetBoxExport.cmd  ► import by double-click

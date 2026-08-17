@@ -43,6 +43,9 @@ DURING AN OUTAGE (one double-click)
   both accounts side by side
 - **Lossless import** of a complete API export, including MPTT trees, generic
   relations, cable paths and the search index
+- **Scheduled export** registered by the installer, with the days and time
+  chosen there. It runs as a Windows scheduled task, independently of NetBox
+  Local — the application never has to be started for the data to stay current
 - **MSI installer** with an access-mode dialog, no administrator rights required
 
 ## Requirements
@@ -61,7 +64,8 @@ Install the MSI from the releases page, or build everything from source:
 .\installer\Build-Installer.ps1           # produce the MSI
 ```
 
-Then set up the export and the desktop shortcut as described in
+Installing the MSI already registers the scheduled export. Details, the
+standalone case and how to change the schedule afterwards are in
 [README_en.md](README_en.md).
 
 ## Repository layout
@@ -71,7 +75,7 @@ Then set up the export and the desktop shortcut as described in
 | `build/` | component manifest with pinned SHA256 checksums, fetch and assembly scripts |
 | `config/` | `NetBoxLocal.json` — the single configuration file |
 | `installer/` | WiX definitions, build and signing scripts |
-| `src/export/` | API export, run daily by the Task Scheduler |
+| `src/export/` | API export plus `Register-SyncTask.ps1`, run by the Task Scheduler |
 | `src/import/` | import of an export into the local instance |
 | `src/launcher/` | start, stop, account setup, desktop shortcut |
 | `assets/` | application icon |

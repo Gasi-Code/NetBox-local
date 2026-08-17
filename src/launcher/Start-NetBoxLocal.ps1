@@ -147,6 +147,10 @@ else {
     $exportScript = Join-Path $RootDir 'src\export\Sync-NetBoxExport.ps1'
     $haveExport = $false
 
+    # Declared here because the messages further down depend on it even when
+    # the block that determines it is skipped.
+    $serverSet = $false
+
     if ($syncRootUsable) {
         $haveExport = [bool](
             (Get-ChildItem -Path $syncRoot -Filter '*.zip' -File -ErrorAction SilentlyContinue) -or
@@ -199,7 +203,18 @@ else {
         $newest = $candidates | Sort-Object Time -Descending | Select-Object -First 1
 
         if ($null -eq $newest) {
-            Write-Warn "No export found in $syncRoot."
+            # An empty folder means two very different things. With a server
+            # configured it is a failure worth flagging - the export should
+            # have produced something. Without one, the folder is simply a
+            # drop point nobody has used yet, and warning about it on every
+            # start trains people to ignore the warnings that do matter.
+            if ($serverSet) {
+                Write-Warn "No export found in $syncRoot."
+                Write-Warn 'Check the schedule: src\export\Register-SyncTask.ps1 -Status'
+            }
+            else {
+                Write-Host "    No export in $syncRoot yet - keeping the existing dataset."
+            }
         }
         else {
             $exportDir = $newest.Path

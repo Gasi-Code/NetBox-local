@@ -160,7 +160,7 @@ ist unkritisch; der nächste Start erkennt das und nutzt sie weiter.
 Empfohlen ist das fertige Installationspaket:
 
 ```
-dist\installer\NetBox Local 1.1.0.msi
+dist\installer\NetBox Local 1.5.0.msi
 ```
 
 Doppelklick genügt. **Es sind keine Adminrechte nötig** — installiert wird nach
@@ -170,13 +170,13 @@ legt der Installer selbst an.
 Für die unbeaufsichtigte Verteilung über eine Softwareverwaltung:
 
 ```powershell
-msiexec /i "NetBox Local 1.1.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.0.msi" /qn /l*v install.log
 ```
 
 Deinstallieren über *Einstellungen → Apps* oder:
 
 ```powershell
-msiexec /x "NetBox Local 1.1.0.msi" /qn
+msiexec /x "NetBox Local 1.5.0.msi" /qn
 ```
 
 Dabei bleiben Datenbank und Zugangsdaten unter `%LOCALAPPDATA%\NetBoxLocal`
@@ -187,7 +187,7 @@ aufräumen will, löscht dieses Verzeichnis von Hand.
 > beim ersten Start. Mit einem Firmen-Codesigning-Zertifikat lässt sich das
 > beheben:
 > ```powershell
-> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.1.0.msi"
+> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.0.msi"
 > ```
 
 **Alternative ohne Installer:** Das Verzeichnis `NetBox Local - Final` einfach
@@ -220,12 +220,19 @@ $APIKey       = "<Token mit ausschliesslich Leserechten>"
 > kann verloren gehen; ein schreibfähiger Token darin wäre ein Vollzugriff auf
 > eure produktive NetBox.
 
-Danach den Taskplaner-Eintrag anlegen:
+Danach den Taskplaner-Eintrag anlegen (bei der Installation über die `.msi`
+geschieht das bereits automatisch mit den dort gewählten Tagen und Zeiten):
 
 ```powershell
 cd C:\NetBoxLocal\src\export
-.\Register-SyncTask.ps1 -Uhrzeit "17:00"
+.\Register-SyncTask.ps1 -Time "17:00"                # täglich
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45" # Mo–Fr
+.\Register-SyncTask.ps1 -Days weekly -Time "23:00"   # nur montags
 ```
+
+Diese Aufgabe läuft **eigenständig** — NetBox Local muss dafür nie gestartet
+sein. Genau darauf kommt es an: Im Störungsfall ist die produktive NetBox nicht
+mehr erreichbar, die Daten müssen also vorher geholt worden sein.
 
 Bei mehreren Notebooks die Zeiten staffeln (17:00, 17:15, 17:30 …), damit sie
 den Server nicht gleichzeitig belasten.
@@ -233,7 +240,8 @@ den Server nicht gleichzeitig belasten.
 Einmal testen:
 
 ```powershell
-Start-ScheduledTask -TaskName "NetBox-Gesamtexport"
+Start-ScheduledTask -TaskName "NetBox Local export"
+.\Register-SyncTask.ps1 -Status
 ```
 
 Danach `C:\Sync-Daten\NetBoxLocal` prüfen — dort muss ein Wochentags-Archiv
@@ -547,14 +555,72 @@ Die Namen stehen in `manifest.json` unter `failedEndpoints`. In NetBox unter
 
 ### Datenstand ist zu alt
 
-Prüfen, ob der Taskplaner-Eintrag läuft:
+Zuerst nachsehen, was der Taskplaner meldet:
 
 ```powershell
-Get-ScheduledTask -TaskName "NetBox-Gesamtexport" | Get-ScheduledTaskInfo
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Status
 ```
 
-Dann `status.txt` und das Dienstprotokoll in
-`C:\Sync-Skripte\Sync-NetBoxExport` ansehen.
+Die Ausgabe zeigt Zeitplan, Konto, letzten Lauf und dessen Ergebnis. `result 0`
+heißt erfolgreich, alles andere nicht.
+
+| Befund | Bedeutung |
+|---|---|
+| `No task 'NetBox Local export' is registered` | Es gibt keinen Zeitplan. Mit `.\Register-SyncTask.ps1` anlegen. |
+| `Runs while you are signed in` | Der Task läuft nur bei angemeldetem Benutzer (siehe unten). |
+| `Last run` liegt lange zurück | Das Gerät war zur geplanten Zeit aus. Der Lauf wird beim nächsten Einschalten nachgeholt. |
+| `result` ist nicht 0 | Der Export selbst ist gescheitert — `status.txt` im Sync-Ordner lesen. |
+
+`status.txt` enthält für jeden Wochentag eine Zeile mit Zeitstempel und
+Ergebnis, etwa:
+
+```
+Monday: 2026.08.17 23:44:11 - ERROR: Export incomplete: 2 of 121 endpoints failed (extras_scripts, plugins_installed-plugins).
+Tuesday: 2026.08.18 01:25:28 - ERROR: No NetBox API token is configured.
+```
+
+### Der Sync läuft nur, wenn ich angemeldet bin
+
+Der Installer versucht zuerst, den Task als **S4U** anzulegen — dann läuft er
+unabhängig davon, ob jemand angemeldet ist, und ohne dass ein Kennwort
+gespeichert wird. S4U setzt das Recht *Als Stapelverarbeitungsauftrag anmelden*
+voraus, das verwaltete Geräte nicht immer vergeben. Ist es nicht vorhanden,
+weicht der Installer auf **Interactive** aus: der Task läuft nur bei
+angemeldetem Benutzer, verpasste Läufe werden aber bei der nächsten Anmeldung
+nachgeholt.
+
+Für ein Notfallnotebook, an dem sich täglich jemand anmeldet, reicht das. Soll
+der Export auch ohne Anmeldung laufen, gibt es zwei Wege:
+
+```powershell
+# Dienstkonto mit Kennwort (Kennwort geht nie über die Kommandozeile)
+.\Register-SyncTask.ps1 -User "DOMAIN\svc-netboxsync"
+
+# oder als SYSTEM - siehe Warnung
+.\Register-SyncTask.ps1 -AsSystem
+```
+
+> **Zu `-AsSystem`:** der API-Token steht im Klartext in
+> `Sync-NetBoxExport.ps1`. Läuft der Task als SYSTEM, ist die Datei für jeden
+> lokalen Administrator lesbar. Nur mit einem reinen Lese-Token verwenden.
+
+### Zeitplan ändern
+
+Ohne Neuinstallation:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local\src\export"
+.\Register-SyncTask.ps1 -Days weekdays -Time "07:45"
+```
+
+`-Days` akzeptiert `daily`, `weekdays` (Mo–Fr) und `weekly` (nur montags). Das
+Skript ersetzt den bestehenden Eintrag, statt einen zweiten daneben anzulegen —
+zwei Aufgaben, die gleichzeitig Vollexporte ziehen, fallen niemandem auf, bis
+der Server sich meldet.
+
+Entfernen mit `.\Register-SyncTask.ps1 -Remove`. Danach wird der lokale
+Datenstand nicht mehr automatisch aufgefrischt.
 
 ### Das Konsolenfenster schließt sich sofort
 
@@ -632,7 +698,7 @@ NetBoxLocal\
 ├─ src\
 │  ├─ export\
 │  │  ├─ Sync-NetBoxExport.ps1  Abruf der API, täglich per Taskplaner
-│  │  └─ Register-SyncTask.ps1    richtet den Taskplaner-Eintrag ein
+│  │  └─ Register-SyncTask.ps1    legt den Taskplaner-Eintrag an bzw. aendert ihn
 │  ├─ import\
 │  │  ├─ Import-NetBoxExport.py   der eigentliche Import
 │  │  └─ Import-NetBoxExport.cmd  ► Import per Doppelklick
