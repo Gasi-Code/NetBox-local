@@ -17,7 +17,7 @@
   <Product Id="*"
            Name="NetBox Local"
            Language="1033"
-           Version="1.0.0"
+           Version="$(var.ProductVersion)"
            Manufacturer="Gasi-Code"
            UpgradeCode="F54B235D-DA98-4889-A67D-EB8E9E5B2C5C">
 

@@ -140,6 +140,7 @@ New-Item -ItemType Directory -Path $objDir -Force | Out-Null
 & $candle -nologo -arch x64 `
     -ext WixUtilExtension `
     -dSourceDir="$SourceDir" `
+    -dProductVersion="$Version" `
     -out "$objDir\" `
     (Join-Path $InstallerDir 'NetBoxLocal.wxs') `
     (Join-Path $InstallerDir 'AccessModeDialog.wxs') `
