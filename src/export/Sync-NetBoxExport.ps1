@@ -52,12 +52,15 @@ $ExcludedEndpoints = [ordered]@{
     "api/core/data-files/"             = "VOLUME: contains the file contents of synchronised data sources."
 
     "api/extras/scripts/"              = "Script definitions; errors out when no script files are present."
+    "api/extras/scripts/upload/"       = "Upload endpoint, POST only. Answers GET with 405 by design."
     "api/extras/dashboard/"            = "Not a list endpoint; returns the calling user's dashboard."
     "api/extras/notifications/"        = "Per-user data."
     "api/extras/subscriptions/"        = "Per-user data."
     "api/extras/bookmarks/"            = "Per-user data."
     "api/extras/saved-filters/"        = "Per-user data."
     "api/extras/table-configs/"        = "Per-user data."
+
+    "api/plugins/installed-plugins/"   = "Returns a bare list rather than a paginated result, and describes the server's plugins rather than the network."
 
     "api/dcim/connected-device/"       = "Not a list endpoint; requires the peer_device and peer_interface parameters."
     "api/schema/redoc/"                = "HTML documentation page, not JSON."
@@ -112,7 +115,6 @@ $FallbackEndpoints = @(
     "api/ipam/service-templates/", "api/ipam/services/", "api/ipam/vlan-groups/",
     "api/ipam/vlan-translation-policies/", "api/ipam/vlan-translation-rules/",
     "api/ipam/vlans/", "api/ipam/vrfs/",
-    "api/plugins/installed-plugins/",
     "api/tenancy/contact-assignments/", "api/tenancy/contact-groups/",
     "api/tenancy/contact-roles/", "api/tenancy/contacts/", "api/tenancy/tenant-groups/",
     "api/tenancy/tenants/",
@@ -208,7 +210,10 @@ Function ConvertTo-EndpointName {
     $parts = $APIPath.Trim("/").Split("/")
 
     If ($parts.Length -ge 3) {
-        Return ($parts[1] + "_" + $parts[2])
+        # Every segment after "api" is kept. Taking only the first two used to
+        # map "api/extras/scripts/" and "api/extras/scripts/upload/" onto the
+        # same file name, so whichever ran second silently overwrote the other.
+        Return ($parts[1..($parts.Length - 1)] -join "_")
     }
 
     Return ($parts[-1])
@@ -236,6 +241,21 @@ Function Invoke-NetBoxGET {
         }
         Catch {
             If ($attempt -ge $MaxAttempts) {
+                Throw
+            }
+
+            # 4xx answers describe the request, not a glitch on the way: a 405
+            # stays a 405 however often it is asked, and a 403 needs a
+            # permission change. Retrying those only delays the export and
+            # buries the real cause under repeated warnings. 408 and 429 are
+            # the exceptions - both explicitly invite a second attempt.
+            $status = $null
+            If ($_.Exception.Response) {
+                $status = [int]$_.Exception.Response.StatusCode
+            }
+
+            If ($status -ge 400 -and $status -lt 500 -and
+                $status -ne 408 -and $status -ne 429) {
                 Throw
             }
 
