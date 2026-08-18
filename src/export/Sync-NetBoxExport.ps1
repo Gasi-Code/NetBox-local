@@ -1,4 +1,4 @@
-# Exports the complete NetBox dataset over the REST API
+﻿# Exports the complete NetBox dataset over the REST API
 #
 # Extended from an IPAM-only export to the complete NetBox dataset
 #              (~120 endpoints), with endpoint discovery at runtime and
@@ -910,7 +910,23 @@ Function Invoke-NetBoxExport {
 New-Item -ItemType Directory -Path $global:ScriptPath    -Force | Out-Null
 New-Item -ItemType Directory -Path $global:LocalSyncPath -Force | Out-Null
 
-# Enable TLS 1.2 for Windows PowerShell 5.1
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Add TLS 1.2 rather than replacing what is enabled. Assigning it outright also
+# switches off TLS 1.3 where the machine already had it, which breaks against a
+# server that has dropped 1.2.
+[Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# On a managed network the route to NetBox usually runs through an
+# authenticating proxy. .NET reads the proxy address from the system settings
+# but sends no credentials, so every request comes back 407 - and the retry
+# loop then repeats it three times before failing with a message that never
+# mentions a proxy. Handing it the signed-in user's credentials is what a
+# browser on the same machine does.
+try {
+    $systemProxy = [Net.WebRequest]::GetSystemWebProxy()
+    $systemProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials
+    [Net.WebRequest]::DefaultWebProxy = $systemProxy
+}
+catch { }
 
 Invoke-NetBoxExport

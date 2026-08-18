@@ -39,7 +39,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Kept identical to Sync-NetBoxExport.ps1 on purpose: a diagnosis that connects
+# under different rules than the real export is worse than no diagnosis.
+[Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+try {
+    $systemProxy = [Net.WebRequest]::GetSystemWebProxy()
+    $systemProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials
+    [Net.WebRequest]::DefaultWebProxy = $systemProxy
+}
+catch { }
 
 function Write-Check {
     param([bool]$Ok, [string]$Label, [string]$Detail = '')
@@ -112,6 +123,22 @@ catch {
         Write-Check $false 'Server not reachable' $_.Exception.Message
         Write-Host ''
         Write-Host '  Check the address, DNS and whether a VPN is required.'
+
+        # On a managed machine the cause is usually one of three things, and
+        # the raw .NET message names none of them.
+        $reason = $_.Exception.Message
+        if ($reason -match 'SSL|TLS|trust relationship|secure channel') {
+            Write-Host ''
+            Write-Host '  The message points at the certificate. If your network inspects TLS,'
+            Write-Host '  the inspection CA has to be trusted by this machine. Opening the same'
+            Write-Host '  address in a browser here shows whether it is.'
+        }
+        elseif ($reason -match '407|proxy') {
+            Write-Host ''
+            Write-Host '  The message points at a proxy. This script already sends your Windows'
+            Write-Host '  credentials to it; if that is refused, the proxy needs a rule for this'
+            Write-Host '  destination, or the account needs permission to reach it.'
+        }
         return
     }
 }
