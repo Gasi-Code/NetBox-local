@@ -158,7 +158,7 @@ harmless; the next start detects them and reuses them.
 Use the installer package:
 
 ```
-dist\installer\NetBox Local 1.5.0.msi
+dist\installer\NetBox Local 1.5.1.msi
 ```
 
 A double-click is enough. **No administrator rights are required** — it installs
@@ -168,13 +168,13 @@ Start menu entries itself.
 For unattended rollout through a software management system:
 
 ```powershell
-msiexec /i "NetBox Local 1.5.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.1.msi" /qn /l*v install.log
 ```
 
 Uninstall through *Settings → Apps*, or:
 
 ```powershell
-msiexec /x "NetBox Local 1.5.0.msi" /qn
+msiexec /x "NetBox Local 1.5.1.msi" /qn
 ```
 
 The database and credentials under `%LOCALAPPDATA%\NetBoxLocal` survive an
@@ -184,7 +184,7 @@ by hand for a clean slate.
 > The package is currently **not signed**, so Windows SmartScreen warns on first
 > launch. A company code-signing certificate fixes that:
 > ```powershell
-> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.0.msi"
+> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.1.msi"
 > ```
 
 **Without the installer:** copy the `NetBox Local - Final` directory onto the

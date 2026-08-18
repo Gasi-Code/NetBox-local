@@ -160,7 +160,7 @@ ist unkritisch; der nächste Start erkennt das und nutzt sie weiter.
 Empfohlen ist das fertige Installationspaket:
 
 ```
-dist\installer\NetBox Local 1.5.0.msi
+dist\installer\NetBox Local 1.5.1.msi
 ```
 
 Doppelklick genügt. **Es sind keine Adminrechte nötig** — installiert wird nach
@@ -170,13 +170,13 @@ legt der Installer selbst an.
 Für die unbeaufsichtigte Verteilung über eine Softwareverwaltung:
 
 ```powershell
-msiexec /i "NetBox Local 1.5.0.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.1.msi" /qn /l*v install.log
 ```
 
 Deinstallieren über *Einstellungen → Apps* oder:
 
 ```powershell
-msiexec /x "NetBox Local 1.5.0.msi" /qn
+msiexec /x "NetBox Local 1.5.1.msi" /qn
 ```
 
 Dabei bleiben Datenbank und Zugangsdaten unter `%LOCALAPPDATA%\NetBoxLocal`
@@ -187,7 +187,7 @@ aufräumen will, löscht dieses Verzeichnis von Hand.
 > beim ersten Start. Mit einem Firmen-Codesigning-Zertifikat lässt sich das
 > beheben:
 > ```powershell
-> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.0.msi"
+> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.1.msi"
 > ```
 
 **Alternative ohne Installer:** Das Verzeichnis `NetBox Local - Final` einfach
