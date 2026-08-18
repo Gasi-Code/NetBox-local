@@ -85,10 +85,59 @@ $env:DOTNET_ROOT = Join-Path $BundleRoot 'dotnet'
 
 # --- 1. Services -----------------------------------------------------------
 
+# A listening port is not proof that *this* installation is running, and
+# reusing whatever answers there is how an upgrade ends up serving pages from a
+# directory that no longer exists. Two things have to hold before the services
+# are left alone: the process must live inside this bundle, and the generated
+# configuration.py must still be on disk. An upgrade removes that file along
+# with the old bundle, and every Django command - the import, the account setup
+# - fails without it.
+$configPy     = Join-Path $netboxDir 'netbox\configuration.py'
+$reuseRunning = $false
+
 if (Test-PortInUse -Port $webPort) {
-    Write-Ok "NetBox Local is already running on port $webPort"
+    $ownerPath = $null
+    $conn = Get-NetTCPConnection -LocalPort $webPort -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    if ($conn) {
+        $ownerPath = (Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue).Path
+    }
+
+    $belongsHere = $ownerPath -and
+                   $ownerPath.StartsWith($BundleRoot, [StringComparison]::OrdinalIgnoreCase)
+
+    if ($belongsHere -and (Test-Path -LiteralPath $configPy)) {
+        $reuseRunning = $true
+        Write-Ok "NetBox Local is already running on port $webPort"
+    }
+    else {
+        if (-not $belongsHere) {
+            Write-Warn "Port $webPort is held by an older or foreign instance."
+            if ($ownerPath) { Write-Warn "  $ownerPath" }
+        }
+        else {
+            Write-Warn 'The running instance lost its configuration, most likely through an upgrade.'
+        }
+
+        Write-Step 'Stopping it before starting this installation'
+        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File ('"{0}"' -f (Join-Path $LauncherDir 'Start-NetBoxServices.ps1')) -Stop |
+            Out-Null
+
+        $stopDeadline = (Get-Date).AddSeconds(60)
+        while ((Test-PortInUse -Port $webPort) -and (Get-Date) -lt $stopDeadline) {
+            Start-Sleep -Seconds 2
+        }
+
+        if (Test-PortInUse -Port $webPort) {
+            throw "Port $webPort is still in use. Close the other instance, then start again."
+        }
+
+        Write-Ok 'stopped'
+    }
 }
-else {
+
+if (-not $reuseRunning) {
     Write-Step 'Starting services'
 
     # The stack runs detached so this script can carry on and do the import.
@@ -106,15 +155,31 @@ else {
         ) `
         -WindowStyle Hidden -PassThru
 
+    # A start that fails part of the way through leaves PostgreSQL and Garnet
+    # behind - they are separate processes and outlive the script that spawned
+    # them. Every later attempt then stops at "port 55432 is already in use",
+    # which describes the symptom of the first failure rather than its cause,
+    # and the way out takes knowledge the person in front of the machine has no
+    # reason to have. So clean up before reporting.
+    $failure  = $null
     $deadline = (Get-Date).AddMinutes(6)
+
     while (-not (Test-PortInUse -Port $webPort)) {
         if ($stack.HasExited) {
-            throw "Startup failed. See the logs in $dataRoot\logs."
+            $failure = "Startup failed. See the logs in $dataRoot\logs."
+            break
         }
         if ((Get-Date) -gt $deadline) {
-            throw "Timed out waiting for startup. See the logs in $dataRoot\logs."
+            $failure = "Timed out waiting for startup. See the logs in $dataRoot\logs."
+            break
         }
         Start-Sleep -Seconds 2
+    }
+
+    if ($failure) {
+        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File ('"{0}"' -f $servicesScript) -Stop | Out-Null
+        throw $failure
     }
 
     Write-Ok "Services running (port $webPort)"

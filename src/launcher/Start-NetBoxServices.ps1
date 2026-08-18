@@ -245,6 +245,7 @@ foreach ($d in @($DataRoot, $LogDir, $SecretsDir)) {
 
 $script:DbPassword = Get-OrCreateSecret -Name 'db-password' -Length 40
 $secretKey         = Get-OrCreateSecret -Name 'django-secret-key' -Length 50
+$tokenPepper       = Get-OrCreateSecret -Name 'api-token-pepper' -Length 50
 
 # --- PostgreSQL cluster ---------------------------------------------------
 
@@ -402,6 +403,15 @@ REDIS = {
 }
 
 SECRET_KEY = '$secretKey'
+
+# Without this NetBox prints a warning on every command it runs. Nothing here
+# issues API tokens - the accounts exist for the web interface only - but a
+# warning shown on every start is a warning people stop reading, and then miss
+# the one that matters.
+#
+# The shape is fixed by utilities/security.py: a dict keyed by an integer
+# between 0 and 32767, whose value is a string of at least 50 characters.
+API_TOKEN_PEPPERS = {0: '$tokenPepper'}
 
 DEBUG = False
 LOGIN_REQUIRED = True
