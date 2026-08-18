@@ -28,7 +28,7 @@ finished in two minutes.
 
 ## Step 1 — Run the installer
 
-Double-click **`NetBox Local 1.5.1.msi`**.
+Double-click **`NetBox Local 1.5.2.msi`**.
 
 - No administrator rights are required.
 - It installs into `%LOCALAPPDATA%\Programs\NetBox Local`.
@@ -320,7 +320,7 @@ in zwei Minuten fertig.
 
 ## Schritt 1 — Installer ausführen
 
-Doppelklick auf **`NetBox Local 1.5.1.msi`**.
+Doppelklick auf **`NetBox Local 1.5.2.msi`**.
 
 - Es sind **keine Adminrechte** nötig.
 - Installiert wird nach `%LOCALAPPDATA%\Programs\NetBox Local`.
