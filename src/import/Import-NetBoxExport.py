@@ -142,7 +142,7 @@ def build_object_type_translation(json_dir):
     if not os.path.isfile(path):
         return {}
 
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8-sig") as handle:
         content = handle.read().strip()
 
     if not content:
@@ -521,6 +521,20 @@ def main():
         action="store_true",
         help="Analyse only, write nothing to the database.",
     )
+    parser.add_argument(
+        "--min-percent",
+        type=int,
+        default=50,
+        help=(
+            "Refuse an export holding less than this percentage of what is "
+            "already stored locally (default: 50). Set to 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Import even when the export looks implausibly small.",
+    )
     args = parser.parse_args()
 
     export_dir = os.path.abspath(args.export_dir)
@@ -536,7 +550,7 @@ def main():
     manifest_path = os.path.join(os.path.dirname(json_dir), "manifest.json")
     manifest = {}
     if os.path.isfile(manifest_path):
-        with open(manifest_path, "r", encoding="utf-8") as handle:
+        with open(manifest_path, "r", encoding="utf-8-sig") as handle:
             manifest = json.load(handle)
 
     log("=== NetBox import ===")
@@ -613,7 +627,7 @@ def main():
             skipped.append(name)
             continue
 
-        with open(os.path.join(json_dir, filename), "r", encoding="utf-8") as handle:
+        with open(os.path.join(json_dir, filename), "r", encoding="utf-8-sig") as handle:
             content = handle.read().strip()
 
         records = json.loads(content) if content else []
@@ -647,6 +661,49 @@ def main():
         for model, records in sorted(datasets.items(), key=lambda kv: -len(kv[1])):
             log(f"    {model._meta.label:<44} {len(records):>7}")
         return 0
+
+    # --- Plausibility ------------------------------------------------------
+    #
+    # An import replaces everything. That is correct when the export reflects
+    # the production instance, and catastrophic when it does not: if the
+    # production database is empty or broken, its API still answers, every
+    # endpoint returns zero objects, and the export is written as a perfectly
+    # valid archive holding nothing. Replacing a good local dataset with that
+    # destroys the emergency copy at the exact moment it is needed, and the
+    # failure looks like a successful start.
+    #
+    # A dataset that shrank by more than half is therefore not imported unless
+    # it is explicitly forced. Growth is never suspicious, and neither is any
+    # change when there is nothing local to lose.
+    local_total = count_local_objects(endpoint_models)
+
+    if local_total:
+        log(f"    Currently local : {local_total}")
+
+    if (
+        args.min_percent > 0
+        and not args.force
+        and local_total > 0
+        and total_records * 100 < local_total * args.min_percent
+    ):
+        share = (total_records * 100) // local_total
+        log("")
+        log("=== Import refused ===")
+        log(f"    The export holds {total_records} objects, the local dataset {local_total}")
+        log(f"    - {share}% of what is already here, below the {args.min_percent}% threshold.")
+        log("")
+        log("    Nothing was written. The previous dataset is still in place.")
+        log("")
+        log("    This is what it looks like when the production NetBox is reachable")
+        log("    but its database is empty or damaged: every endpoint answers, and")
+        log("    the export is valid but hollow. Check the source before overriding.")
+        log("")
+        log("    Older archives are kept per weekday in the sync folder, so a good")
+        log("    one from an earlier day can be imported by name.")
+        log("")
+        log("    If the export is genuinely correct - the production instance really")
+        log("    did shrink - repeat with --force.")
+        return 4
 
     models_in_order = dependency_sorted(list(datasets.keys()))
 
@@ -686,6 +743,25 @@ def main():
 
     log("    Errors             : none")
     return 0
+
+
+def count_local_objects(endpoint_models):
+    """How much data is currently held locally, across the models an import replaces."""
+    counted = set()
+    total = 0
+
+    for model in endpoint_models.values():
+        label = model._meta.label
+        if label in counted or label in SKIPPED_MODELS or label in UNAVAILABLE_MODELS:
+            continue
+        counted.add(label)
+        try:
+            total += model.objects.count()
+        except Exception:
+            # A model the local schema does not have is simply not counted.
+            pass
+
+    return total
 
 
 def run_import(models_in_order, datasets, object_type_translation, failures):

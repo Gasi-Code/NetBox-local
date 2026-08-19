@@ -31,6 +31,12 @@ $TimeoutSeconds = 300
 $PageSize   = 500
 $MaxAttempts     = 3
 
+# An export holding less than this share of what the archive it would replace
+# already contains is treated as a fault and not published. Set to 0 to switch
+# the check off, for instance while deliberately shrinking the production
+# instance.
+$MinObjectPercent = 50
+
 $PushURL = ""
 
 # Endpoints that must never end up in an export archive, and why. Emergency
@@ -197,6 +203,52 @@ Function Write-UTF8File {
         $Content,
         $utf8Encoding
     )
+}
+
+# Reads the object count out of an archive that is already there, so a new
+# export can be compared against what it is about to replace. Anything
+# unreadable returns 0, which disables the comparison rather than blocking the
+# export - a missing archive is the normal case on a first run.
+Function Get-NetBoxArchiveObjectCount {
+    Param (
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    If (-not (Test-Path -LiteralPath $Path)) { Return 0 }
+
+    $archive = $null
+
+    Try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+
+        $entry = $archive.Entries |
+            Where-Object { $_.Name -eq "manifest.json" } |
+            Select-Object -First 1
+
+        If ($null -eq $entry) { Return 0 }
+
+        $reader = New-Object System.IO.StreamReader($entry.Open())
+        $manifest = $reader.ReadToEnd() | ConvertFrom-Json
+        $reader.Close()
+
+        If ($null -eq $manifest.objectCounts) { Return 0 }
+
+        $sum = 0
+        ForEach ($property in $manifest.objectCounts.PSObject.Properties) {
+            $sum += [int]$property.Value
+        }
+
+        Return $sum
+    }
+    Catch {
+        Return 0
+    }
+    Finally {
+        If ($null -ne $archive) { $archive.Dispose() }
+    }
 }
 
 # Turns an API path into a file name
@@ -818,6 +870,42 @@ Function Invoke-NetBoxExport {
         # --- Veroeffentlichen ------------------------------------------------
 
         $targetFileName = Get-NetBoxRotationFileName
+
+        # A production NetBox whose database is empty or damaged still answers
+        # its API: every endpoint returns zero objects and the export completes
+        # without a single failure. Publishing that would overwrite this
+        # weekday's archive with a valid but hollow one, and a week of outage
+        # would empty all seven. The archive is what the emergency notebook
+        # falls back on, so a collapse in size is treated as a fault, not data.
+        $newObjectCount = (
+            $objectCounts.Values | Measure-Object -Sum
+        ).Sum
+        If ($null -eq $newObjectCount) { $newObjectCount = 0 }
+
+        $previousCount = Get-NetBoxArchiveObjectCount `
+            -Path (Join-Path $global:LocalSyncPath $targetFileName)
+
+        If ($previousCount -gt 0 -and
+            ($newObjectCount * 100) -lt ($previousCount * $MinObjectPercent)) {
+
+            $share = [Math]::Floor(($newObjectCount * 100) / $previousCount)
+
+            Write-ServiceLog `
+                -Level "ERROR" `
+                -Message (
+                    "Export not published: " + $newObjectCount + " objects against " +
+                    $previousCount + " in the existing " + $targetFileName + " (" +
+                    $share + "%, below the " + $MinObjectPercent + "% threshold). " +
+                    "The previous archive is kept. This is what an empty or damaged " +
+                    "production database looks like from the API side."
+                )
+
+            Throw (
+                "Export rejected: only " + $newObjectCount + " objects against " +
+                $previousCount + " in the previous " + $targetFileName +
+                ". The existing archive was kept."
+            )
+        }
 
         Publish-NetBoxExport `
             -StagingPath $StagingPath `

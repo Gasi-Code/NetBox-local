@@ -327,6 +327,12 @@ else {
             if ($importExit -eq 0) {
                 Write-Ok 'Dataset loaded'
             }
+            elseif ($importExit -eq 4) {
+                # Not a failure: the import declined an export holding far less
+                # than what is already here. The reasoning is printed above.
+                Write-Warn 'Import declined - the export looked implausibly small.'
+                Write-Warn 'The previous dataset is unchanged and still in use.'
+            }
             else {
                 Write-Warn "Import failed (code $importExit). Showing the previous dataset."
             }
