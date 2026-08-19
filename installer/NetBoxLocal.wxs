@@ -136,9 +136,32 @@
                   Impersonate="yes"
                   Return="ignore" />
 
+    <!-- Uninstall leaves two things behind that nothing else removes: the
+         running services, whose locked files then survive in a directory the
+         uninstaller believes it emptied, and the scheduled export, which keeps
+         firing at a script that no longer exists. This runs while the files
+         are still there, so it has to be sequenced before RemoveFiles. -->
+    <CustomAction Id="SetUninstallCleanupCmd"
+                  Property="UninstallCleanup"
+                  Value="&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]src\launcher\Uninstall-Cleanup.ps1&quot;" />
+
+    <CustomAction Id="UninstallCleanup"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <Custom Action="SetApplyOptionsCmd" After="InstallFiles">NOT Installed</Custom>
       <Custom Action="ApplyInstallOptions" After="SetApplyOptionsCmd">NOT Installed</Custom>
+
+      <!-- Installed covers a genuine uninstall as well as the removal half of
+           a major upgrade. Stopping the services is right in both: an upgrade
+           that replaces the bundle underneath a running instance is exactly
+           what leaves it serving a directory that no longer exists. -->
+      <Custom Action="SetUninstallCleanupCmd" Before="UninstallCleanup">Installed</Custom>
+      <Custom Action="UninstallCleanup" Before="RemoveFiles">Installed</Custom>
     </InstallExecuteSequence>
 
     <!-- The stock WixUI_InstallDir flow with AccessModeDlg spliced in between
