@@ -160,7 +160,7 @@ ist unkritisch; der nächste Start erkennt das und nutzt sie weiter.
 Empfohlen ist das fertige Installationspaket:
 
 ```
-dist\installer\NetBox Local 1.5.2.msi
+dist\installer\NetBox Local 1.5.3.msi
 ```
 
 Doppelklick genügt. **Es sind keine Adminrechte nötig** — installiert wird nach
@@ -170,13 +170,13 @@ legt der Installer selbst an.
 Für die unbeaufsichtigte Verteilung über eine Softwareverwaltung:
 
 ```powershell
-msiexec /i "NetBox Local 1.5.2.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.3.msi" /qn /l*v install.log
 ```
 
 Deinstallieren über *Einstellungen → Apps* oder:
 
 ```powershell
-msiexec /x "NetBox Local 1.5.2.msi" /qn
+msiexec /x "NetBox Local 1.5.3.msi" /qn
 ```
 
 Dabei bleiben Datenbank und Zugangsdaten unter `%LOCALAPPDATA%\NetBoxLocal`
@@ -187,7 +187,7 @@ aufräumen will, löscht dieses Verzeichnis von Hand.
 > beim ersten Start. Mit einem Firmen-Codesigning-Zertifikat lässt sich das
 > beheben:
 > ```powershell
-> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.2.msi"
+> signtool sign /f zertifikat.pfx /p PASSWORT /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.3.msi"
 > ```
 
 **Alternative ohne Installer:** Das Verzeichnis `NetBox Local - Final` einfach
@@ -552,6 +552,47 @@ stillschweigend Daten verlieren.
 Einzelne Endpunkte antworten mit **403** — der API-Token darf sie nicht lesen.
 Die Namen stehen in `manifest.json` unter `failedEndpoints`. In NetBox unter
 *Admin → Permissions* die Leserechte des Token-Benutzers erweitern.
+
+### „Import declined — the export looked implausibly small"
+
+Das ist kein Fehler, sondern ein Schutz. Der Import hat festgestellt, dass der
+Export weniger als die Hälfte dessen enthält, was lokal bereits gespeichert ist,
+und deshalb **nichts** angefasst. Der bisherige Datenstand bleibt in Betrieb.
+
+Der Grund: Eine produktive NetBox, deren Datenbank leer oder beschädigt ist,
+**antwortet weiterhin**. Alle Endpunkte liefern brav leere Listen, kein Aufruf
+schlägt fehl, und der Export ist technisch einwandfrei — nur eben hohl. Würde er
+eingespielt, wäre die Notfallkopie genau in dem Moment vernichtet, in dem sie
+gebraucht wird, und der Start meldete Erfolg.
+
+Was zu tun ist:
+
+1. **Die Quelle prüfen.** Ist die produktive NetBox in Ordnung? Sind dort
+   wirklich noch alle Daten?
+2. Ist sie *nicht* in Ordnung, tut der Schutz gerade genau seinen Dienst —
+   nichts unternehmen, NetBox Local zeigt weiter den letzten guten Stand.
+3. Ist der Export **berechtigt** klein, weil die produktive Instanz tatsächlich
+   verkleinert wurde, einmalig erzwingen:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local"
+.\dist\bundle\python\python.exe .\src\import\Import-NetBoxExport.py "C:\Sync-Daten\NetBoxLocal\Monday.zip" --force
+```
+
+Ein Archiv eines anderen Wochentags lässt sich genauso namentlich einspielen —
+die Rotation hält bis zu sieben Generationen vor.
+
+Die Schwelle liegt bei 50 % und ist über `--min-percent` einstellbar; `0`
+schaltet die Prüfung ab.
+
+### Der Export meldet „Export rejected"
+
+Dieselbe Logik auf der anderen Seite: Der Export hat gemerkt, dass er weniger
+Objekte geholt hat, als im Archiv stehen, das er überschreiben würde, und hat
+das **alte Archiv behalten**. Ohne diese Prüfung wären nach sieben Tagen Störung
+alle sieben Wochentagsarchive leer.
+
+Die Schwelle steht als `$MinObjectPercent` oben in `Sync-NetBoxExport.ps1`.
 
 ### Datenstand ist zu alt
 

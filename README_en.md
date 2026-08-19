@@ -158,7 +158,7 @@ harmless; the next start detects them and reuses them.
 Use the installer package:
 
 ```
-dist\installer\NetBox Local 1.5.2.msi
+dist\installer\NetBox Local 1.5.3.msi
 ```
 
 A double-click is enough. **No administrator rights are required** — it installs
@@ -168,13 +168,13 @@ Start menu entries itself.
 For unattended rollout through a software management system:
 
 ```powershell
-msiexec /i "NetBox Local 1.5.2.msi" /qn /l*v install.log
+msiexec /i "NetBox Local 1.5.3.msi" /qn /l*v install.log
 ```
 
 Uninstall through *Settings → Apps*, or:
 
 ```powershell
-msiexec /x "NetBox Local 1.5.2.msi" /qn
+msiexec /x "NetBox Local 1.5.3.msi" /qn
 ```
 
 The database and credentials under `%LOCALAPPDATA%\NetBoxLocal` survive an
@@ -184,7 +184,7 @@ by hand for a clean slate.
 > The package is currently **not signed**, so Windows SmartScreen warns on first
 > launch. A company code-signing certificate fixes that:
 > ```powershell
-> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.2.msi"
+> signtool sign /f cert.pfx /p PASSWORD /fd SHA256 /t http://timestamp.digicert.com "NetBox Local 1.5.3.msi"
 > ```
 
 **Without the installer:** copy the `NetBox Local - Final` directory onto the
@@ -551,6 +551,47 @@ the read permissions of the token's user in NetBox under *Admin → Permissions*
 
 No code change is needed: both the export and the import work generically, so
 those endpoints flow through as soon as the permissions are in place.
+
+### "Import declined — the export looked implausibly small"
+
+Not a failure, a safeguard. The import found that the export holds less than
+half of what is already stored locally and therefore touched **nothing**. The
+existing dataset stays in use.
+
+The reason: a production NetBox whose database is empty or damaged **still
+answers**. Every endpoint dutifully returns an empty list, no request fails, and
+the export is technically flawless — merely hollow. Loading it would destroy the
+emergency copy at the exact moment it is needed, and the start would report
+success.
+
+What to do:
+
+1. **Check the source.** Is the production NetBox healthy? Is its data actually
+   still there?
+2. If it is *not*, the safeguard is doing precisely its job — leave it alone,
+   NetBox Local keeps showing the last good dataset.
+3. If the export is **legitimately** small because the production instance
+   really did shrink, override it once:
+
+```powershell
+cd "$env:LOCALAPPDATA\Programs\NetBox Local"
+.\dist\bundle\python\python.exe .\src\import\Import-NetBoxExport.py "C:\Sync-Daten\NetBoxLocal\Monday.zip" --force
+```
+
+An archive from a different weekday can be loaded by name the same way — the
+rotation keeps up to seven generations.
+
+The threshold is 50% and can be changed with `--min-percent`; `0` disables the
+check.
+
+### The export reports "Export rejected"
+
+The same reasoning from the other side: the export noticed it had collected
+fewer objects than the archive it was about to overwrite contains, and **kept
+the old archive**. Without this check, seven days of outage would empty all
+seven weekday archives.
+
+The threshold is `$MinObjectPercent` at the top of `Sync-NetBoxExport.ps1`.
 
 ### The dataset is too old
 
